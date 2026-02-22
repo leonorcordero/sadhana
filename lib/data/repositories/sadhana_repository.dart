@@ -229,6 +229,18 @@ class SadhanaRepository {
     }
   }
 
+  Future<void> closeTodayForActiveCycles() async {
+    final today = DateTime.now();
+    final date = DateTime(today.year, today.month, today.day);
+    final activeCycles = _datasource
+        .getCycles()
+        .where((c) => c.isActive)
+        .toList();
+    for (final cycle in activeCycles) {
+      await closeDay(cycleId: cycle.id, date: date);
+    }
+  }
+
   DashboardSnapshot getDashboardSnapshot({required DateTime date}) {
     final cycle = getActiveCycle();
     if (cycle == null) {

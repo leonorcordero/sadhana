@@ -173,11 +173,16 @@ class AppController extends StateNotifier<AppState> {
     _loadState();
   }
 
+  Future<void> closeTodayForActiveCycles() async {
+    await _repository.closeTodayForActiveCycles();
+    _loadState();
+  }
+
   void _scheduleDailyClosure() {
     _midnightTimer?.cancel();
     final wait = _dailyClosureService.timeUntilNextClosure(DateTime.now());
     _midnightTimer = Timer(wait, () async {
-      await closePendingDays();
+      await closeTodayForActiveCycles();
       _scheduleDailyClosure();
     });
   }
