@@ -1,0 +1,53 @@
+import 'package:sadhana/data/models/cycle_model.dart';
+import 'package:sadhana/data/models/day_log_model.dart';
+import 'package:sadhana/data/models/task_model.dart';
+
+class AppState {
+  const AppState({
+    required this.cycles,
+    required this.tasks,
+    required this.logs,
+    required this.selectedDate,
+    required this.error,
+  });
+
+  factory AppState.initial() {
+    return AppState(
+      cycles: const [],
+      tasks: const [],
+      logs: const [],
+      selectedDate: DateTime.now(),
+      error: null,
+    );
+  }
+
+  final List<CycleModel> cycles;
+  final List<TaskModel> tasks;
+  final List<DayLogModel> logs;
+  final DateTime selectedDate;
+  final String? error;
+
+  CycleModel? get activeCycle {
+    for (final cycle in cycles) {
+      if (cycle.isActive) return cycle;
+    }
+    return null;
+  }
+
+  AppState copyWith({
+    List<CycleModel>? cycles,
+    List<TaskModel>? tasks,
+    List<DayLogModel>? logs,
+    DateTime? selectedDate,
+    String? error,
+    bool clearError = false,
+  }) {
+    return AppState(
+      cycles: cycles ?? this.cycles,
+      tasks: tasks ?? this.tasks,
+      logs: logs ?? this.logs,
+      selectedDate: selectedDate ?? this.selectedDate,
+      error: clearError ? null : error ?? this.error,
+    );
+  }
+}
