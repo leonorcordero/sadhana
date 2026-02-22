@@ -5,12 +5,17 @@ import 'package:sadhana/data/models/day_log_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
 
 class LocalStorageDatasource {
+  static const _schemaVersionKey = 'schema_version';
+  static const _currentSchemaVersion = 1;
+  static const _customEventsKey = 'custom_calendar_events';
+
   Future<void> init() async {
     await Hive.initFlutter();
     await Hive.openBox<Map>(AppConstants.cyclesBox);
     await Hive.openBox<Map>(AppConstants.tasksBox);
     await Hive.openBox<Map>(AppConstants.dayLogsBox);
     await Hive.openBox(AppConstants.settingsBox);
+    await _runMigrations();
   }
 
   Box<Map> get _cycleBox => Hive.box<Map>(AppConstants.cyclesBox);
@@ -60,5 +65,89 @@ class LocalStorageDatasource {
 
   Future<void> saveSetting(String key, dynamic value) async {
     await _settingsBox.put(key, value);
+  }
+
+  List<Map<String, dynamic>> getCustomEventsRaw() {
+    final list = _settingsBox.get(_customEventsKey) as List?;
+    if (list == null) return [];
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<void> saveCustomEventsRaw(List<Map<String, dynamic>> items) async {
+    await _settingsBox.put(_customEventsKey, items);
+  }
+
+  Future<Map<String, dynamic>> exportAllAsJsonMap() async {
+    return {
+      'schemaVersion': _currentSchemaVersion,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'cycles': _cycleBox.values
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false),
+      'tasks': _taskBox.values
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false),
+      'dayLogs': _dayLogBox.values
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false),
+      'settings': Map<String, dynamic>.from(_settingsBox.toMap()),
+    };
+  }
+
+  Future<void> importAllFromJsonMap(Map<String, dynamic> payload) async {
+    final cycles =
+        (payload['cycles'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    final tasks =
+        (payload['tasks'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    final dayLogs =
+        (payload['dayLogs'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    final settings = Map<String, dynamic>.from(
+      (payload['settings'] as Map?) ?? {},
+    );
+
+    await _cycleBox.clear();
+    await _taskBox.clear();
+    await _dayLogBox.clear();
+    await _settingsBox.clear();
+
+    for (final row in cycles) {
+      final id = row['id'] as String?;
+      if (id != null) {
+        await _cycleBox.put(id, row);
+      }
+    }
+    for (final row in tasks) {
+      final id = row['id'] as String?;
+      if (id != null) {
+        await _taskBox.put(id, row);
+      }
+    }
+    for (final row in dayLogs) {
+      final id = row['id'] as String?;
+      if (id != null) {
+        await _dayLogBox.put(id, row);
+      }
+    }
+    for (final entry in settings.entries) {
+      await _settingsBox.put(entry.key, entry.value);
+    }
+    await _settingsBox.put(_schemaVersionKey, _currentSchemaVersion);
+  }
+
+  Future<void> _runMigrations() async {
+    final current = (_settingsBox.get(_schemaVersionKey) as int?) ?? 0;
+    if (current >= _currentSchemaVersion) return;
+
+    // Reserved for future structural migrations.
+    await _settingsBox.put(_schemaVersionKey, _currentSchemaVersion);
   }
 }

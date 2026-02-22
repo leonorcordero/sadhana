@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/providers.dart';
 import 'package:sadhana/core/settings/app_settings.dart';
@@ -98,8 +101,193 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               );
             }).toList(),
           ),
+          const SizedBox(height: 32),
+          Text('Notificaciones', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Recordatorios diarios'),
+            value: settings.remindersEnabled,
+            onChanged: (value) => notifier.setRemindersEnabled(value),
+          ),
+          if (settings.remindersEnabled) ...[
+            const SizedBox(height: 8),
+            _HourPickerRow(
+              title: 'Hora 1',
+              value: settings.reminderHours.isNotEmpty
+                  ? settings.reminderHours[0]
+                  : 9,
+              onChanged: (value) {
+                final next = List<int>.from(settings.reminderHours);
+                while (next.length < 3) {
+                  next.add(9);
+                }
+                next[0] = value;
+                notifier.setReminderHours(next);
+              },
+            ),
+            _HourPickerRow(
+              title: 'Hora 2',
+              value: settings.reminderHours.length > 1
+                  ? settings.reminderHours[1]
+                  : 14,
+              onChanged: (value) {
+                final next = List<int>.from(settings.reminderHours);
+                while (next.length < 3) {
+                  next.add(14);
+                }
+                next[1] = value;
+                notifier.setReminderHours(next);
+              },
+            ),
+            _HourPickerRow(
+              title: 'Hora 3',
+              value: settings.reminderHours.length > 2
+                  ? settings.reminderHours[2]
+                  : 20,
+              onChanged: (value) {
+                final next = List<int>.from(settings.reminderHours);
+                while (next.length < 3) {
+                  next.add(20);
+                }
+                next[2] = value;
+                notifier.setReminderHours(next);
+              },
+            ),
+          ],
+          const SizedBox(height: 32),
+          Text('Backup', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _exportBackup,
+                icon: const Icon(Icons.upload_file_outlined),
+                label: const Text('Exportar JSON'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _importBackup,
+                icon: const Icon(Icons.download_for_offline_outlined),
+                label: const Text('Importar JSON'),
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+
+  Future<void> _exportBackup() async {
+    final repository = ref.read(repositoryProvider);
+    final json = await repository.exportBackupJson();
+
+    await Clipboard.setData(ClipboardData(text: json));
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Backup exportado'),
+        content: const Text(
+          'El JSON se copio al portapapeles. Pegalo y guardalo en un archivo seguro.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _importBackup() async {
+    final controller = TextEditingController();
+    final repository = ref.read(repositoryProvider);
+    final appController = ref.read(appControllerProvider.notifier);
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Importar backup JSON'),
+        content: SizedBox(
+          width: 460,
+          child: TextField(
+            controller: controller,
+            minLines: 10,
+            maxLines: 16,
+            decoration: const InputDecoration(hintText: '{ ...json... }'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              try {
+                final raw = controller.text.trim();
+                if (raw.isEmpty) return;
+
+                // Quick validation feedback before import.
+                jsonDecode(raw);
+                await repository.importBackupJson(raw);
+                await appController.initialize(
+                  remindersEnabled: ref
+                      .read(appSettingsProvider)
+                      .remindersEnabled,
+                  reminderHours: ref.read(appSettingsProvider).reminderHours,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+              } catch (_) {
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('JSON inválido o incompatible')),
+                );
+              }
+            },
+            child: const Text('Importar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HourPickerRow extends StatelessWidget {
+  const _HourPickerRow({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(width: 64, child: Text(title)),
+        const SizedBox(width: 8),
+        DropdownButton<int>(
+          value: value.clamp(0, 23).toInt(),
+          items: List.generate(
+            24,
+            (h) => DropdownMenuItem<int>(
+              value: h,
+              child: Text('${h.toString().padLeft(2, '0')}:00'),
+            ),
+          ),
+          onChanged: (next) {
+            if (next != null) onChanged(next);
+          },
+        ),
+      ],
     );
   }
 }

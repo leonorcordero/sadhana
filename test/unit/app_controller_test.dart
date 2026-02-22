@@ -63,7 +63,10 @@ class SilentNotificationService extends NotificationService {
   Future<void> initialize() async {}
 
   @override
-  Future<void> scheduleDailyReminders() async {}
+  Future<void> scheduleDailyReminders({
+    List<int> hours = const [9, 14, 20],
+    bool enabled = true,
+  }) async {}
 
   @override
   Future<void> showCompletionNotification() async {}
@@ -117,31 +120,33 @@ void main() {
       final state = container.read(appControllerProvider);
       expect(state.cycles.length, 1);
       expect(state.tasks.length, 2);
-      expect(state.tasks.map((t) => t.title), containsAll([
-        'Meditar 20 min',
-        'Journaling',
-      ]));
+      expect(
+        state.tasks.map((t) => t.title),
+        containsAll(['Meditar 20 min', 'Journaling']),
+      );
     });
 
-    test('ciclo creado comienza inactivo', () async {
+    test('ciclo creado se activa automaticamente', () async {
       final ds = InMemoryDatasource();
       final container = buildContainer(datasource: ds);
       addTearDown(container.dispose);
 
-      await container.read(appControllerProvider.notifier).createCycle(
-        name: 'Yoga',
-        duration: 40,
-        customDuration: false,
-        sankalpa: 'Fuerza',
-      );
+      await container
+          .read(appControllerProvider.notifier)
+          .createCycle(
+            name: 'Yoga',
+            duration: 40,
+            customDuration: false,
+            sankalpa: 'Fuerza',
+          );
 
       final state = container.read(appControllerProvider);
-      expect(state.cycles.first.isActive, isFalse);
+      expect(state.cycles.first.isActive, isTrue);
     });
   });
 
   group('AppController multiples ciclos activos', () {
-    test('activeCycles retorna todos los ciclos activos', () async {
+    test('startCycle permite multiples ciclos activos', () async {
       final ds = InMemoryDatasource();
       final container = buildContainer(datasource: ds);
       addTearDown(container.dispose);
@@ -167,6 +172,7 @@ void main() {
 
       final state = container.read(appControllerProvider);
       expect(state.activeCycles.length, 2);
+      expect(state.activeCycles.map((c) => c.name), containsAll(['A', 'B']));
     });
 
     test('stopCycle desactiva solo el ciclo indicado', () async {
@@ -192,54 +198,61 @@ void main() {
       final cycles = container.read(appControllerProvider).cycles;
       await controller.startCycle(cycles[0].id);
       await controller.startCycle(cycles[1].id);
-
-      await controller.stopCycle(cycles[0].id);
+      await controller.stopCycle(cycles[1].id);
 
       final state = container.read(appControllerProvider);
       expect(state.activeCycles.length, 1);
-      expect(state.activeCycles.first.name, 'B');
+      expect(state.activeCycles.first.name, 'A');
     });
   });
 
   group('AppController notificaciones condicionales', () {
-    test('cancela recordatorios cuando todos los ciclos del dia estan completos',
-        () async {
-      final ds = InMemoryDatasource();
-      final notif = SilentNotificationService();
-      final container = buildContainer(datasource: ds, notificationService: notif);
-      addTearDown(container.dispose);
+    test(
+      'cancela recordatorios cuando todos los ciclos del dia estan completos',
+      () async {
+        final ds = InMemoryDatasource();
+        final notif = SilentNotificationService();
+        final container = buildContainer(
+          datasource: ds,
+          notificationService: notif,
+        );
+        addTearDown(container.dispose);
 
-      final controller = container.read(appControllerProvider.notifier);
+        final controller = container.read(appControllerProvider.notifier);
 
-      await controller.createCycle(
-        name: 'Ciclo unico',
-        duration: 7,
-        customDuration: false,
-        sankalpa: 'S',
-        tasks: [(title: 'Tarea unica', description: null)],
-      );
+        await controller.createCycle(
+          name: 'Ciclo unico',
+          duration: 7,
+          customDuration: false,
+          sankalpa: 'S',
+          tasks: [(title: 'Tarea unica', description: null)],
+        );
 
-      final state = container.read(appControllerProvider);
-      final cycle = state.cycles.first;
-      await controller.startCycle(cycle.id);
+        final state = container.read(appControllerProvider);
+        final cycle = state.cycles.first;
+        await controller.startCycle(cycle.id);
 
-      // Selecciona hoy
-      final today = DateTime.now();
-      controller.selectDate(today);
+        // Selecciona hoy
+        final today = DateTime.now();
+        controller.selectDate(today);
 
-      final taskId = container.read(appControllerProvider).tasks.first.id;
-      await controller.toggleTaskForSelectedDate(
-        taskId: taskId,
-        completed: true,
-      );
+        final taskId = container.read(appControllerProvider).tasks.first.id;
+        await controller.toggleTaskForSelectedDate(
+          taskId: taskId,
+          completed: true,
+        );
 
-      expect(notif.cancelCalled, isTrue);
-    });
+        expect(notif.cancelCalled, isTrue);
+      },
+    );
 
     test('no cancela recordatorios si quedan ciclos incompletos', () async {
       final ds = InMemoryDatasource();
       final notif = SilentNotificationService();
-      final container = buildContainer(datasource: ds, notificationService: notif);
+      final container = buildContainer(
+        datasource: ds,
+        notificationService: notif,
+      );
       addTearDown(container.dispose);
 
       final controller = container.read(appControllerProvider.notifier);
@@ -265,9 +278,7 @@ void main() {
       await controller.startCycle(cycles[1].id);
 
       final tasks = container.read(appControllerProvider).tasks;
-      final taskA = tasks.firstWhere(
-        (t) => t.cycleId == cycles[0].id,
-      );
+      final taskA = tasks.firstWhere((t) => t.cycleId == cycles[0].id);
 
       // Solo completa el ciclo A
       await controller.toggleTaskForSelectedDate(
@@ -281,67 +292,102 @@ void main() {
   });
 
   group('AppController auto-cierre al completar todas las tareas', () {
-    test('cierra el dia automaticamente cuando todas las tareas estan listas',
-        () async {
-      final ds = InMemoryDatasource();
-      final container = buildContainer(datasource: ds);
-      addTearDown(container.dispose);
+    test(
+      'cierra el dia automaticamente cuando todas las tareas estan listas',
+      () async {
+        final ds = InMemoryDatasource();
+        final container = buildContainer(datasource: ds);
+        addTearDown(container.dispose);
 
-      final controller = container.read(appControllerProvider.notifier);
+        final controller = container.read(appControllerProvider.notifier);
 
-      await controller.createCycle(
-        name: 'Ciclo auto',
-        duration: 7,
-        customDuration: false,
-        sankalpa: 'S',
-        tasks: [(title: 'Unica tarea', description: null)],
-      );
+        await controller.createCycle(
+          name: 'Ciclo auto',
+          duration: 7,
+          customDuration: false,
+          sankalpa: 'S',
+          tasks: [(title: 'Unica tarea', description: null)],
+        );
 
-      final cycle = container.read(appControllerProvider).cycles.first;
-      await controller.startCycle(cycle.id);
+        final cycle = container.read(appControllerProvider).cycles.first;
+        await controller.startCycle(cycle.id);
 
-      controller.selectDate(DateTime.now());
+        controller.selectDate(DateTime.now());
 
-      final taskId = container.read(appControllerProvider).tasks.first.id;
-      await controller.toggleTaskForSelectedDate(
-        taskId: taskId,
-        completed: true,
-      );
+        final taskId = container.read(appControllerProvider).tasks.first.id;
+        await controller.toggleTaskForSelectedDate(
+          taskId: taskId,
+          completed: true,
+        );
 
-      final logs = container.read(appControllerProvider).logs;
-      expect(logs.any((l) => l.closed), isTrue);
-    });
+        final logs = container.read(appControllerProvider).logs;
+        expect(logs.any((l) => l.closed), isTrue);
+      },
+    );
 
-    test('no cierra automaticamente si la fecha seleccionada no es hoy',
-        () async {
-      final ds = InMemoryDatasource();
-      final container = buildContainer(datasource: ds);
-      addTearDown(container.dispose);
+    test(
+      'no cierra automaticamente si la fecha seleccionada no es hoy',
+      () async {
+        final ds = InMemoryDatasource();
+        final container = buildContainer(datasource: ds);
+        addTearDown(container.dispose);
 
-      final controller = container.read(appControllerProvider.notifier);
+        final controller = container.read(appControllerProvider.notifier);
 
-      await controller.createCycle(
-        name: 'Ciclo pasado',
-        duration: 7,
-        customDuration: false,
-        sankalpa: 'S',
-        tasks: [(title: 'Tarea', description: null)],
-      );
+        await controller.createCycle(
+          name: 'Ciclo pasado',
+          duration: 7,
+          customDuration: false,
+          sankalpa: 'S',
+          tasks: [(title: 'Tarea', description: null)],
+        );
 
-      final cycle = container.read(appControllerProvider).cycles.first;
-      await controller.startCycle(cycle.id);
+        final cycle = container.read(appControllerProvider).cycles.first;
+        await controller.startCycle(cycle.id);
 
-      controller.selectDate(DateTime.now().subtract(const Duration(days: 1)));
+        controller.selectDate(DateTime.now().subtract(const Duration(days: 1)));
 
-      final taskId = container.read(appControllerProvider).tasks.first.id;
-      await controller.toggleTaskForSelectedDate(
-        taskId: taskId,
-        completed: true,
-      );
+        final taskId = container.read(appControllerProvider).tasks.first.id;
+        await controller.toggleTaskForSelectedDate(
+          taskId: taskId,
+          completed: true,
+        );
 
-      final logs = container.read(appControllerProvider).logs;
-      expect(logs.any((l) => l.closed), isFalse);
-    });
+        final logs = container.read(appControllerProvider).logs;
+        expect(logs.any((l) => l.closed), isFalse);
+      },
+    );
+
+    test(
+      'cierra automaticamente usando selectedDate inicial del estado',
+      () async {
+        final ds = InMemoryDatasource();
+        final container = buildContainer(datasource: ds);
+        addTearDown(container.dispose);
+
+        final controller = container.read(appControllerProvider.notifier);
+
+        await controller.createCycle(
+          name: 'Ciclo inicial',
+          duration: 7,
+          customDuration: false,
+          sankalpa: 'S',
+          tasks: [(title: 'Tarea', description: null)],
+        );
+
+        final cycle = container.read(appControllerProvider).cycles.first;
+        await controller.startCycle(cycle.id);
+
+        final taskId = container.read(appControllerProvider).tasks.first.id;
+        await controller.toggleTaskForSelectedDate(
+          taskId: taskId,
+          completed: true,
+        );
+
+        final logs = container.read(appControllerProvider).logs;
+        expect(logs.any((l) => l.closed), isTrue);
+      },
+    );
   });
 
   group('AppState getters', () {
@@ -349,6 +395,13 @@ void main() {
       final state = AppState.initial();
       expect(state.activeCycle, isNull);
       expect(state.activeCycles, isEmpty);
+    });
+
+    test('selectedDate inicial queda normalizada al inicio del dia', () {
+      final state = AppState.initial();
+      expect(state.selectedDate.hour, 0);
+      expect(state.selectedDate.minute, 0);
+      expect(state.selectedDate.second, 0);
     });
   });
 }

@@ -22,7 +22,15 @@ class NotificationService {
     await _plugin.initialize(settings);
   }
 
-  Future<void> scheduleDailyReminders() async {
+  Future<void> scheduleDailyReminders({
+    List<int> hours = const [9, 14, 20],
+    bool enabled = true,
+  }) async {
+    if (!enabled) {
+      await cancelDailyReminders();
+      return;
+    }
+
     const android = AndroidNotificationDetails(
       'sadhana_reminders',
       'Recordatorios diarios',
@@ -32,16 +40,19 @@ class NotificationService {
     const ios = DarwinNotificationDetails();
     const details = NotificationDetails(android: android, iOS: ios);
 
-    // 3 recordatorios diarios.
-    final hours = [9, 14, 20];
-    for (var i = 0; i < hours.length; i++) {
+    final normalized = List<int>.from(hours)
+      ..sort()
+      ..retainWhere((h) => h >= 0 && h <= 23);
+    if (normalized.isEmpty) return;
+
+    for (var i = 0; i < normalized.length; i++) {
       final id = 100 + i;
       await _plugin.cancel(id);
       await _plugin.zonedSchedule(
         id,
         'Sadhana',
         'Tienes tareas pendientes. Cierra tu dia con enfoque.',
-        _nextTime(hours[i]),
+        _nextTime(normalized[i]),
         details,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
@@ -54,7 +65,7 @@ class NotificationService {
   // Cancela los recordatorios pendientes del dia (usados cuando el usuario
   // completo todas sus tareas antes de que llegue el proximo recordatorio).
   Future<void> cancelDailyReminders() async {
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 12; i++) {
       await _plugin.cancel(100 + i);
     }
   }

@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 
 class AppSettings {
-  const AppSettings({required this.name, required this.themeColor});
+  const AppSettings({
+    required this.name,
+    required this.themeColor,
+    required this.remindersEnabled,
+    required this.reminderHours,
+  });
 
   final String name;
   final Color themeColor;
+  final bool remindersEnabled;
+  final List<int> reminderHours;
 
   static const defaultName = 'Sadhana';
   static const defaultColor = Color(0xFF5A7D5A); // sage
@@ -20,8 +27,17 @@ class AppSettings {
     Color(0xFF37474F), // gris pizarra
   ];
 
-  AppSettings copyWith({String? name, Color? themeColor}) => AppSettings(
-        name: name ?? this.name,
-        themeColor: themeColor ?? this.themeColor,
-      );
+  static const defaultReminderHours = [9, 14, 20];
+
+  AppSettings copyWith({
+    String? name,
+    Color? themeColor,
+    bool? remindersEnabled,
+    List<int>? reminderHours,
+  }) => AppSettings(
+    name: name ?? this.name,
+    themeColor: themeColor ?? this.themeColor,
+    remindersEnabled: remindersEnabled ?? this.remindersEnabled,
+    reminderHours: reminderHours ?? this.reminderHours,
+  );
 }

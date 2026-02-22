@@ -136,6 +136,18 @@ void main() {
       expect(c.streakMax, 0);
     });
 
+    test('create falla con duracion invalida', () {
+      expect(
+        () => CycleModel.create(
+          name: 'Invalido',
+          duration: 0,
+          customDuration: true,
+          sankalpa: 'S',
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('progress calcula ratio correcto', () {
       final c = CycleModel(
         id: 'id',

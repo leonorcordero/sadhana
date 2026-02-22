@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'dart:convert';
 import 'package:sadhana/core/constants/app_constants.dart';
 import 'package:sadhana/core/utils/date_utils.dart';
 import 'package:sadhana/data/datasources/local_storage_datasource.dart';
+import 'package:sadhana/data/models/calendar_custom_event.dart';
 import 'package:sadhana/data/models/cycle_model.dart';
 import 'package:sadhana/data/models/dashboard_snapshot.dart';
 import 'package:sadhana/data/models/day_log_model.dart';
@@ -70,7 +72,8 @@ class SadhanaRepository {
 
   Future<void> startCycle(String cycleId) async {
     final cycle = getCycleById(cycleId);
-    if (cycle == null || cycle.isActive) return;
+    if (cycle == null) return;
+    if (cycle.isActive) return;
     await _datasource.saveCycle(cycle.copyWith(isActive: true));
   }
 
@@ -78,6 +81,19 @@ class SadhanaRepository {
     final cycle = getCycleById(cycleId);
     if (cycle == null) return;
     await _datasource.saveCycle(cycle.copyWith(isActive: false));
+  }
+
+  Future<void> restartCycle(String cycleId) async {
+    final cycle = getCycleById(cycleId);
+    if (cycle == null) return;
+    await _datasource.saveCycle(
+      cycle.copyWith(
+        currentDay: 1,
+        startDay: 1,
+        streakCurrent: 0,
+        isActive: true,
+      ),
+    );
   }
 
   List<TaskModel> getTasksByCycle(String cycleId) {
@@ -298,6 +314,95 @@ class SadhanaRepository {
 
   List<DayLogModel> getLogsByCycle(String cycleId) {
     return _datasource.getDayLogs().where((l) => l.cycleId == cycleId).toList();
+  }
+
+  List<CalendarCustomEvent> getCustomEvents() {
+    return _datasource
+        .getCustomEventsRaw()
+        .map(CalendarCustomEvent.fromMap)
+        .toList();
+  }
+
+  List<CalendarCustomEvent> getCustomEventsForDate(DateTime date) {
+    final key = DateUtilsX.dateKey(date);
+    return getCustomEvents().where((e) => e.dateKey == key).toList();
+  }
+
+  Future<void> upsertCustomEvent(CalendarCustomEvent event) async {
+    final events = getCustomEvents();
+    var replaced = false;
+    final next = <CalendarCustomEvent>[];
+    for (final item in events) {
+      if (item.id == event.id) {
+        next.add(event);
+        replaced = true;
+      } else {
+        next.add(item);
+      }
+    }
+    if (!replaced) next.add(event);
+
+    await _datasource.saveCustomEventsRaw(
+      next.map((e) => e.toMap()).toList(growable: false),
+    );
+  }
+
+  Future<void> deleteCustomEvent(String eventId) async {
+    final events = getCustomEvents();
+    final next = events.where((e) => e.id != eventId).toList();
+    await _datasource.saveCustomEventsRaw(
+      next.map((e) => e.toMap()).toList(growable: false),
+    );
+  }
+
+  String googleCalendarCreateUrl(CalendarCustomEvent event) {
+    final day = DateUtilsX.fromDateKey(event.dateKey);
+    final endDay = day.add(const Duration(days: 1));
+    final start =
+        '${day.year.toString().padLeft(4, '0')}${day.month.toString().padLeft(2, '0')}${day.day.toString().padLeft(2, '0')}';
+    final end =
+        '${endDay.year.toString().padLeft(4, '0')}${endDay.month.toString().padLeft(2, '0')}${endDay.day.toString().padLeft(2, '0')}';
+    final params = {
+      'text': event.title,
+      'details': event.description ?? '',
+      'dates': '$start/$end',
+    };
+    return Uri.https(
+      'calendar.google.com',
+      '/calendar/u/0/r/eventedit',
+      params,
+    ).toString();
+  }
+
+  ({int total, int completed, bool closed, bool complete}) getDaySummary({
+    required String cycleId,
+    required DateTime date,
+  }) {
+    final tasks = getTasksByCycle(cycleId).where((t) => t.isActive).toList();
+    final log = getOrCreateDayLog(cycleId: cycleId, date: date);
+    final completed = log.completedTaskIds
+        .where((id) => tasks.any((t) => t.id == id))
+        .length;
+    final complete = tasks.isNotEmpty && completed == tasks.length;
+    return (
+      total: tasks.length,
+      completed: completed,
+      closed: log.closed,
+      complete: complete,
+    );
+  }
+
+  Future<String> exportBackupJson() async {
+    final map = await _datasource.exportAllAsJsonMap();
+    return const JsonEncoder.withIndent('  ').convert(map);
+  }
+
+  Future<void> importBackupJson(String rawJson) async {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Formato de backup invalido');
+    }
+    await _datasource.importAllFromJsonMap(decoded);
   }
 
   String motivationalQuote({required bool dayComplete}) {

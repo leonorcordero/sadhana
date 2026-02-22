@@ -5,15 +5,35 @@ import 'package:sadhana/data/models/cycle_model.dart';
 import 'package:sadhana/data/models/day_log_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
 
-class TasksPage extends ConsumerWidget {
-  const TasksPage({super.key});
+class TasksPage extends ConsumerStatefulWidget {
+  const TasksPage({super.key, this.focusCycleId});
+
+  final String? focusCycleId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TasksPage> createState() => _TasksPageState();
+}
+
+class _TasksPageState extends ConsumerState<TasksPage> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(
+      () => ref.read(appControllerProvider.notifier).selectDate(DateTime.now()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = this.ref;
     final state = ref.watch(appControllerProvider);
     final activeCycles = state.activeCycles;
+    final focusCycle = widget.focusCycleId == null
+        ? null
+        : state.cycles.where((c) => c.id == widget.focusCycleId).firstOrNull;
+    final visibleCycles = focusCycle == null ? activeCycles : [focusCycle];
 
-    if (activeCycles.isEmpty) {
+    if (visibleCycles.isEmpty) {
       return const Scaffold(
         body: Center(child: Text('Activa un ciclo para gestionar tareas.')),
       );
@@ -22,17 +42,7 @@ class TasksPage extends ConsumerWidget {
     final repo = ref.read(repositoryProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tareas diarias'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.today_outlined),
-            onPressed: () => ref
-                .read(appControllerProvider.notifier)
-                .selectDate(DateTime.now()),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Tareas diarias')),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
@@ -42,26 +52,11 @@ class TasksPage extends ConsumerWidget {
               subtitle: Text(
                 '${state.selectedDate.year}-${state.selectedDate.month.toString().padLeft(2, '0')}-${state.selectedDate.day.toString().padLeft(2, '0')}',
               ),
-              trailing: IconButton(
-                icon: const Icon(Icons.calendar_month),
-                onPressed: () async {
-                  final selected = await showDatePicker(
-                    context: context,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2100),
-                    initialDate: state.selectedDate,
-                  );
-                  if (selected != null) {
-                    ref
-                        .read(appControllerProvider.notifier)
-                        .selectDate(selected);
-                  }
-                },
-              ),
+              trailing: const Icon(Icons.today),
             ),
           ),
           const SizedBox(height: 8),
-          for (final cycle in activeCycles) ...[
+          for (final cycle in visibleCycles) ...[
             _CycleTasksSection(
               cycle: cycle,
               tasks: state.tasks.where((t) => t.cycleId == cycle.id).toList(),
@@ -136,14 +131,9 @@ class _CycleTasksSection extends StatelessWidget {
                             );
                       },
                 title: Text(task.title),
-                subtitle:
-                    task.description == null ? null : Text(task.description!),
-                secondary: IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => ref
-                      .read(appControllerProvider.notifier)
-                      .deleteTask(task.id),
-                ),
+                subtitle: task.description == null
+                    ? null
+                    : Text(task.description!),
               ),
             ),
       ],
@@ -199,5 +189,14 @@ class _CycleTasksSection extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+extension _FirstOrNullExt<T> on Iterable<T> {
+  T? get firstOrNull {
+    for (final item in this) {
+      return item;
+    }
+    return null;
   }
 }

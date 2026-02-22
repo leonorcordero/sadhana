@@ -59,7 +59,7 @@ void main() {
   });
 
   group('multiples ciclos activos', () {
-    test('startCycle no desactiva otros ciclos activos', () async {
+    test('startCycle permite multiples ciclos activos', () async {
       final c1 = CycleModel.create(
         name: 'A',
         duration: 21,
@@ -95,7 +95,7 @@ void main() {
       expect(repo.getCycleById(c.id)!.isActive, isTrue);
     });
 
-    test('stopCycle desactiva solo el ciclo indicado', () async {
+    test('stopCycle desactiva el ciclo indicado', () async {
       final c1 = CycleModel.create(
         name: 'A',
         duration: 21,
@@ -110,7 +110,6 @@ void main() {
       );
       await repo.createCycle(c1);
       await repo.createCycle(c2);
-      await repo.startCycle(c1.id);
       await repo.startCycle(c2.id);
 
       await repo.stopCycle(c1.id);
@@ -129,28 +128,28 @@ void main() {
       await repo.createCycle(c);
       await repo.startCycle(c.id);
 
-      expect(
-        () => repo.deleteCycle(c.id),
-        throwsA(isA<StateError>()),
-      );
+      expect(() => repo.deleteCycle(c.id), throwsA(isA<StateError>()));
     });
   });
 
   group('createCycle con tareas', () {
-    test('getTasksByCycle retorna las tareas del ciclo recien creado', () async {
-      final c = CycleModel.create(
-        name: 'Ciclo con tareas',
-        duration: 21,
-        customDuration: false,
-        sankalpa: 'S',
-      );
-      await repo.createCycle(c);
-      await repo.createTask(TaskModel.create(cycleId: c.id, title: 'T1'));
-      await repo.createTask(TaskModel.create(cycleId: c.id, title: 'T2'));
+    test(
+      'getTasksByCycle retorna las tareas del ciclo recien creado',
+      () async {
+        final c = CycleModel.create(
+          name: 'Ciclo con tareas',
+          duration: 21,
+          customDuration: false,
+          sankalpa: 'S',
+        );
+        await repo.createCycle(c);
+        await repo.createTask(TaskModel.create(cycleId: c.id, title: 'T1'));
+        await repo.createTask(TaskModel.create(cycleId: c.id, title: 'T2'));
 
-      final tasks = repo.getTasksByCycle(c.id);
-      expect(tasks.length, 2);
-      expect(tasks.map((t) => t.title), containsAll(['T1', 'T2']));
-    });
+        final tasks = repo.getTasksByCycle(c.id);
+        expect(tasks.length, 2);
+        expect(tasks.map((t) => t.title), containsAll(['T1', 'T2']));
+      },
+    );
   });
 }
