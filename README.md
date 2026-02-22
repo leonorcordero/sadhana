@@ -96,3 +96,4 @@ flutter build ios --release
 - Android: `workmanager` ejecuta tarea periodica para cierre diario cuando la app no esta en foreground.
 - iOS: `background_fetch` se inicializa para callbacks periodicos del sistema.
 
+
