@@ -39,14 +39,15 @@ Future<void> main() async {
   );
 }
 
-class SadhanaApp extends StatelessWidget {
+class SadhanaApp extends ConsumerWidget {
   const SadhanaApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(appSettingsProvider);
     return MaterialApp(
-      title: 'Sadhana',
-      theme: AppTheme.light(),
+      title: settings.name,
+      theme: AppTheme.light(seed: settings.themeColor),
       debugShowCheckedModeBanner: false,
       home: const HomeShell(),
     );

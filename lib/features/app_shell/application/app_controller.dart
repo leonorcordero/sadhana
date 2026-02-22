@@ -174,6 +174,13 @@ class AppController extends StateNotifier<AppState> {
       );
       if (allDone) {
         await _notificationService.cancelDailyReminders();
+
+        // Auto-cierre: solo si la fecha seleccionada es hoy.
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        if (state.selectedDate == today) {
+          await _repository.closeTodayForActiveCycles();
+        }
       }
     }
 

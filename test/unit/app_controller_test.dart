@@ -280,6 +280,70 @@ void main() {
     });
   });
 
+  group('AppController auto-cierre al completar todas las tareas', () {
+    test('cierra el dia automaticamente cuando todas las tareas estan listas',
+        () async {
+      final ds = InMemoryDatasource();
+      final container = buildContainer(datasource: ds);
+      addTearDown(container.dispose);
+
+      final controller = container.read(appControllerProvider.notifier);
+
+      await controller.createCycle(
+        name: 'Ciclo auto',
+        duration: 7,
+        customDuration: false,
+        sankalpa: 'S',
+        tasks: [(title: 'Unica tarea', description: null)],
+      );
+
+      final cycle = container.read(appControllerProvider).cycles.first;
+      await controller.startCycle(cycle.id);
+
+      controller.selectDate(DateTime.now());
+
+      final taskId = container.read(appControllerProvider).tasks.first.id;
+      await controller.toggleTaskForSelectedDate(
+        taskId: taskId,
+        completed: true,
+      );
+
+      final logs = container.read(appControllerProvider).logs;
+      expect(logs.any((l) => l.closed), isTrue);
+    });
+
+    test('no cierra automaticamente si la fecha seleccionada no es hoy',
+        () async {
+      final ds = InMemoryDatasource();
+      final container = buildContainer(datasource: ds);
+      addTearDown(container.dispose);
+
+      final controller = container.read(appControllerProvider.notifier);
+
+      await controller.createCycle(
+        name: 'Ciclo pasado',
+        duration: 7,
+        customDuration: false,
+        sankalpa: 'S',
+        tasks: [(title: 'Tarea', description: null)],
+      );
+
+      final cycle = container.read(appControllerProvider).cycles.first;
+      await controller.startCycle(cycle.id);
+
+      controller.selectDate(DateTime.now().subtract(const Duration(days: 1)));
+
+      final taskId = container.read(appControllerProvider).tasks.first.id;
+      await controller.toggleTaskForSelectedDate(
+        taskId: taskId,
+        completed: true,
+      );
+
+      final logs = container.read(appControllerProvider).logs;
+      expect(logs.any((l) => l.closed), isFalse);
+    });
+  });
+
   group('AppState getters', () {
     test('activeCycle retorna null cuando no hay ciclos activos', () {
       final state = AppState.initial();
