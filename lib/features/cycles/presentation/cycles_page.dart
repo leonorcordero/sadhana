@@ -35,23 +35,34 @@ class CyclesPage extends ConsumerWidget {
                     onPressed: () =>
                         _showCycleDialog(context, ref, cycle: cycle),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.play_arrow),
-                    onPressed: () => ref
-                        .read(appControllerProvider.notifier)
-                        .startCycle(cycle.id),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.stop),
-                    onPressed: () => ref
-                        .read(appControllerProvider.notifier)
-                        .stopCycle(cycle.id),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => ref
-                        .read(appControllerProvider.notifier)
-                        .deleteCycle(cycle.id),
+                  if (!cycle.isActive)
+                    IconButton(
+                      icon: const Icon(Icons.play_arrow),
+                      tooltip: 'Iniciar ciclo',
+                      onPressed: () => ref
+                          .read(appControllerProvider.notifier)
+                          .startCycle(cycle.id),
+                    ),
+                  if (cycle.isActive)
+                    IconButton(
+                      icon: const Icon(Icons.stop),
+                      tooltip: 'Detener ciclo',
+                      onPressed: () => ref
+                          .read(appControllerProvider.notifier)
+                          .stopCycle(cycle.id),
+                    ),
+                  Tooltip(
+                    message: cycle.isActive
+                        ? 'Detene el ciclo antes de eliminarlo'
+                        : 'Eliminar ciclo',
+                    child: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: cycle.isActive
+                          ? null
+                          : () => ref
+                              .read(appControllerProvider.notifier)
+                              .deleteCycle(cycle.id),
+                    ),
                   ),
                 ],
               ),
