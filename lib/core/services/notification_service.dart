@@ -51,6 +51,14 @@ class NotificationService {
     }
   }
 
+  // Cancela los recordatorios pendientes del dia (usados cuando el usuario
+  // completo todas sus tareas antes de que llegue el proximo recordatorio).
+  Future<void> cancelDailyReminders() async {
+    for (var i = 0; i < 3; i++) {
+      await _plugin.cancel(100 + i);
+    }
+  }
+
   Future<void> showCompletionNotification() async {
     const android = AndroidNotificationDetails(
       'sadhana_rewards',

@@ -58,6 +58,7 @@ class AppController extends StateNotifier<AppState> {
     required int duration,
     required bool customDuration,
     required String sankalpa,
+    List<({String title, String? description})> tasks = const [],
   }) async {
     try {
       final cycle = CycleModel.create(
@@ -67,6 +68,15 @@ class AppController extends StateNotifier<AppState> {
         sankalpa: sankalpa,
       );
       await _repository.createCycle(cycle);
+      for (final t in tasks) {
+        await _repository.createTask(
+          TaskModel.create(
+            cycleId: cycle.id,
+            title: t.title,
+            description: t.description,
+          ),
+        );
+      }
       _loadState();
     } catch (e) {
       state = state.copyWith(error: e.toString());
@@ -138,33 +148,40 @@ class AppController extends StateNotifier<AppState> {
     required String taskId,
     required bool completed,
   }) async {
-    final cycle = state.activeCycle;
-    if (cycle == null) return;
+    final task = state.tasks.firstWhere((t) => t.id == taskId);
 
     await _repository.toggleTaskCompleted(
-      cycleId: cycle.id,
+      cycleId: task.cycleId,
       taskId: taskId,
       date: state.selectedDate,
       completed: completed,
     );
 
     final isComplete = _repository.isDayComplete(
-      cycleId: cycle.id,
+      cycleId: task.cycleId,
       date: state.selectedDate,
     );
 
     if (isComplete) {
       await _notificationService.showCompletionNotification();
+
+      // Si todos los ciclos activos completaron el dia, cancela recordatorios.
+      final allDone = state.activeCycles.every(
+        (c) => _repository.isDayComplete(
+          cycleId: c.id,
+          date: state.selectedDate,
+        ),
+      );
+      if (allDone) {
+        await _notificationService.cancelDailyReminders();
+      }
     }
 
     _loadState();
   }
 
   Future<void> closeDayNow() async {
-    final cycle = state.activeCycle;
-    if (cycle == null) return;
-
-    await _repository.closeDay(cycleId: cycle.id, date: state.selectedDate);
+    await _repository.closeTodayForActiveCycles();
     _loadState();
   }
 
@@ -183,6 +200,8 @@ class AppController extends StateNotifier<AppState> {
     final wait = _dailyClosureService.timeUntilNextClosure(DateTime.now());
     _midnightTimer = Timer(wait, () async {
       await closeTodayForActiveCycles();
+      // Re-agenda recordatorios para el nuevo dia.
+      await _notificationService.scheduleDailyReminders();
       _scheduleDailyClosure();
     });
   }

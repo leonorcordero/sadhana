@@ -6,11 +6,13 @@ import 'package:sadhana/data/models/cycle_model.dart';
 import 'package:sadhana/data/models/dashboard_snapshot.dart';
 import 'package:sadhana/data/models/day_log_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
+import 'package:sadhana/features/streaks/application/streak_calculator.dart';
 
 class SadhanaRepository {
   SadhanaRepository(this._datasource);
 
   final LocalStorageDatasource _datasource;
+  static const _streakCalculator = StreakCalculator();
 
   List<CycleModel> getCycles() {
     final cycles = _datasource.getCycles();
@@ -67,11 +69,9 @@ class SadhanaRepository {
   }
 
   Future<void> startCycle(String cycleId) async {
-    final cycles = _datasource.getCycles();
-    for (final cycle in cycles) {
-      final isTarget = cycle.id == cycleId;
-      await _datasource.saveCycle(cycle.copyWith(isActive: isTarget));
-    }
+    final cycle = getCycleById(cycleId);
+    if (cycle == null || cycle.isActive) return;
+    await _datasource.saveCycle(cycle.copyWith(isActive: true));
   }
 
   Future<void> stopCycle(String cycleId) async {
@@ -171,11 +171,13 @@ class SadhanaRepository {
     final log = getOrCreateDayLog(cycleId: cycleId, date: date);
     final closedLog = log.copyWith(closed: true, wasComplete: complete);
 
-    var streakCurrent = complete ? cycle.streakCurrent + 1 : 0;
-    var streakMax = cycle.streakMax;
-    if (streakCurrent > streakMax) {
-      streakMax = streakCurrent;
-    }
+    final streak = _streakCalculator.next(
+      current: cycle.streakCurrent,
+      max: cycle.streakMax,
+      dayComplete: complete,
+    );
+    final streakCurrent = streak.current;
+    final streakMax = streak.max;
 
     var nextDay = cycle.currentDay + 1;
     var active = cycle.isActive;
@@ -243,6 +245,22 @@ class SadhanaRepository {
 
   DashboardSnapshot getDashboardSnapshot({required DateTime date}) {
     final cycle = getActiveCycle();
+    if (cycle == null) {
+      return DashboardSnapshot(
+        activeCycle: null,
+        tasks: const [],
+        todayLog: null,
+        completionRatio: 0,
+      );
+    }
+    return getDashboardSnapshotForCycle(cycleId: cycle.id, date: date);
+  }
+
+  DashboardSnapshot getDashboardSnapshotForCycle({
+    required String cycleId,
+    required DateTime date,
+  }) {
+    final cycle = getCycleById(cycleId);
     if (cycle == null) {
       return DashboardSnapshot(
         activeCycle: null,

@@ -6,28 +6,59 @@ import 'package:sadhana/core/utils/date_utils.dart';
 import 'package:sadhana/core/utils/moon_phase_utils.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-class CalendarPage extends ConsumerWidget {
+class CalendarPage extends ConsumerStatefulWidget {
   const CalendarPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(appControllerProvider);
-    final active = state.activeCycle;
+  ConsumerState<CalendarPage> createState() => _CalendarPageState();
+}
 
-    if (active == null) {
+class _CalendarPageState extends ConsumerState<CalendarPage> {
+  int _selectedCycleIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(appControllerProvider);
+    final activeCycles = state.activeCycles;
+
+    if (activeCycles.isEmpty) {
       return const Scaffold(
         body: Center(child: Text('Activa un ciclo para ver calendario.')),
       );
     }
 
+    // Ajusta el indice si se desactivo el ciclo seleccionado
+    final cycleIndex = _selectedCycleIndex.clamp(0, activeCycles.length - 1);
+    final selectedCycle = activeCycles[cycleIndex];
+
     final repo = ref.read(repositoryProvider);
-    final completionMap = repo.getCalendarCompletionMap(active.id);
+    final completionMap = repo.getCalendarCompletionMap(selectedCycle.id);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Calendario')),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
+          if (activeCycles.length > 1) ...[
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (int i = 0; i < activeCycles.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(activeCycles[i].name),
+                        selected: cycleIndex == i,
+                        onSelected: (_) =>
+                            setState(() => _selectedCycleIndex = i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Card(
             child: Padding(
               padding: const EdgeInsets.all(8),
@@ -65,7 +96,9 @@ class CalendarPage extends ConsumerWidget {
           Card(
             child: ListTile(
               title: const Text('Fase lunar'),
-              subtitle: Text(MoonPhaseUtils.phaseEmoji(state.selectedDate)),
+              subtitle: Text(
+                MoonPhaseUtils.phaseName(state.selectedDate),
+              ),
             ),
           ),
           const SizedBox(height: 8),

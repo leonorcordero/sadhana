@@ -120,7 +120,7 @@ void main() {
 
     await tester.pump();
 
-    expect(find.text('Sankalpa'), findsOneWidget);
+    expect(find.text('Ciclo 40'), findsOneWidget);
     expect(find.text('Servir con presencia'), findsOneWidget);
   });
 }

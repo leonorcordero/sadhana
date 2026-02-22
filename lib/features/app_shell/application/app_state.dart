@@ -27,12 +27,10 @@ class AppState {
   final DateTime selectedDate;
   final String? error;
 
-  CycleModel? get activeCycle {
-    for (final cycle in cycles) {
-      if (cycle.isActive) return cycle;
-    }
-    return null;
-  }
+  List<CycleModel> get activeCycles =>
+      cycles.where((c) => c.isActive).toList();
+
+  CycleModel? get activeCycle => activeCycles.firstOrNull;
 
   AppState copyWith({
     List<CycleModel>? cycles,
