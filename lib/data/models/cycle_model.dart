@@ -12,6 +12,7 @@ class CycleModel {
     required this.streakCurrent,
     required this.streakMax,
     required this.isActive,
+    this.archetype,
   });
 
   factory CycleModel.create({
@@ -19,7 +20,11 @@ class CycleModel {
     required int duration,
     required bool customDuration,
     required String sankalpa,
+    String? archetype,
   }) {
+    if (duration < 1) {
+      throw ArgumentError.value(duration, 'duration', 'Debe ser mayor a 0');
+    }
     return CycleModel(
       id: const Uuid().v4(),
       name: name,
@@ -31,6 +36,7 @@ class CycleModel {
       streakCurrent: 0,
       streakMax: 0,
       isActive: false,
+      archetype: archetype,
     );
   }
 
@@ -44,6 +50,9 @@ class CycleModel {
   final int streakCurrent;
   final int streakMax;
   final bool isActive;
+
+  /// Clave del arquetipo mandala (nullable para compatibilidad con datos existentes).
+  final String? archetype;
 
   double get progress =>
       duration == 0 ? 0 : (currentDay / duration).clamp(0, 1);
@@ -59,6 +68,7 @@ class CycleModel {
     int? streakCurrent,
     int? streakMax,
     bool? isActive,
+    String? archetype,
   }) {
     return CycleModel(
       id: id ?? this.id,
@@ -71,6 +81,7 @@ class CycleModel {
       streakCurrent: streakCurrent ?? this.streakCurrent,
       streakMax: streakMax ?? this.streakMax,
       isActive: isActive ?? this.isActive,
+      archetype: archetype ?? this.archetype,
     );
   }
 
@@ -86,6 +97,7 @@ class CycleModel {
       'streakCurrent': streakCurrent,
       'streakMax': streakMax,
       'isActive': isActive,
+      'archetype': archetype,
     };
   }
 
@@ -101,6 +113,7 @@ class CycleModel {
       streakCurrent: map['streakCurrent'] as int,
       streakMax: map['streakMax'] as int,
       isActive: map['isActive'] as bool,
+      archetype: map['archetype'] as String?,
     );
   }
 }

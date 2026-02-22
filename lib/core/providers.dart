@@ -26,8 +26,8 @@ final dailyClosureServiceProvider = Provider<DailyClosureService>((ref) {
 
 final appSettingsProvider =
     StateNotifierProvider<AppSettingsNotifier, AppSettings>((ref) {
-  return AppSettingsNotifier(ref.read(localStorageDatasourceProvider));
-});
+      return AppSettingsNotifier(ref.read(localStorageDatasourceProvider));
+    });
 
 final appControllerProvider = StateNotifierProvider<AppController, AppState>((
   ref,

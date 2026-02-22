@@ -24,5 +24,7 @@ class AppConstants {
     '2026-03-03': 'Ekadashi',
     '2026-03-17': 'Purnima',
     '2026-03-31': 'Amavasya',
+    '2026-08-12': 'Eclipse (ejemplo)',
+    '2026-10-05': 'Dia de nacimiento (ejemplo)',
   };
 }

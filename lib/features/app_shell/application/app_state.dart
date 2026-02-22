@@ -12,11 +12,12 @@ class AppState {
   });
 
   factory AppState.initial() {
+    final now = DateTime.now();
     return AppState(
       cycles: const [],
       tasks: const [],
       logs: const [],
-      selectedDate: DateTime.now(),
+      selectedDate: DateTime(now.year, now.month, now.day),
       error: null,
     );
   }
@@ -27,8 +28,7 @@ class AppState {
   final DateTime selectedDate;
   final String? error;
 
-  List<CycleModel> get activeCycles =>
-      cycles.where((c) => c.isActive).toList();
+  List<CycleModel> get activeCycles => cycles.where((c) => c.isActive).toList();
 
   CycleModel? get activeCycle => activeCycles.firstOrNull;
 

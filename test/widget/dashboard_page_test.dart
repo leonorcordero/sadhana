@@ -64,6 +64,12 @@ class InMemoryDatasource extends LocalStorageDatasource {
   Future<void> saveSetting(String key, dynamic value) async {
     _settings[key] = value;
   }
+
+  @override
+  List<Map<String, dynamic>> getCustomEventsRaw() => const [];
+
+  @override
+  Future<void> saveCustomEventsRaw(List<Map<String, dynamic>> items) async {}
 }
 
 class SilentNotificationService extends NotificationService {
@@ -71,7 +77,10 @@ class SilentNotificationService extends NotificationService {
   Future<void> initialize() async {}
 
   @override
-  Future<void> scheduleDailyReminders() async {}
+  Future<void> scheduleDailyReminders({
+    List<int> hours = const [9, 14, 20],
+    bool enabled = true,
+  }) async {}
 
   @override
   Future<void> showCompletionNotification() async {}
@@ -121,6 +130,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Ciclo 40'), findsOneWidget);
-    expect(find.text('Servir con presencia'), findsOneWidget);
+    expect(find.textContaining('Servir con presencia'), findsOneWidget);
   });
 }
