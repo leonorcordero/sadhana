@@ -97,3 +97,12 @@ flutter build ios --release
 - iOS: `background_fetch` se inicializa para callbacks periodicos del sistema.
 
 
+## Git Workflow Basico
+
+```bash
+git checkout master
+git pull
+git checkout -b feat/nombre-tarea
+git add .
+git commit -m "feat: descripcion"
+git push -u origin feat/nombre-tarea
