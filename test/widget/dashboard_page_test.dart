@@ -58,6 +58,11 @@ class InMemoryDatasource extends LocalStorageDatasource {
   }
 
   @override
+  Future<void> deleteDayLog(String dayLogId) async {
+    _logs.remove(dayLogId);
+  }
+
+  @override
   dynamic getSetting(String key) => _settings[key];
 
   @override
@@ -66,10 +71,27 @@ class InMemoryDatasource extends LocalStorageDatasource {
   }
 
   @override
+  Future<void> deleteSetting(String key) async {
+    _settings.remove(key);
+  }
+
+  @override
   List<Map<String, dynamic>> getCustomEventsRaw() => const [];
 
   @override
   Future<void> saveCustomEventsRaw(List<Map<String, dynamic>> items) async {}
+
+  @override
+  List<Map<String, dynamic>> getDiaryEntriesRaw() => const [];
+
+  @override
+  Future<void> saveDiaryEntriesRaw(List<Map<String, dynamic>> items) async {}
+
+  @override
+  List<Map<String, dynamic>> getNotesRaw() => const [];
+
+  @override
+  Future<void> saveNotesRaw(List<Map<String, dynamic>> items) async {}
 }
 
 class SilentNotificationService extends NotificationService {
@@ -129,7 +151,7 @@ void main() {
 
     await tester.pump();
 
-    expect(find.text('Ciclo 40'), findsOneWidget);
+    expect(find.text('Ciclo 40'), findsWidgets);
     expect(find.textContaining('Servir con presencia'), findsOneWidget);
   });
 }

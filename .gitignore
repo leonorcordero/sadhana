@@ -58,3 +58,6 @@ ios/Runner/GoogleService-Info.plist
 
 # Optional local editor configs
 .vscode/
+
+# Google Fonts package cache (fuentes bundled en assets/fonts/ en su lugar)
+google_fonts/

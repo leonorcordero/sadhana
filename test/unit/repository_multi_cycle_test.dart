@@ -9,6 +9,7 @@ import 'package:sadhana/data/repositories/sadhana_repository.dart';
 class InMemoryDatasource extends LocalStorageDatasource {
   final _cycles = <String, CycleModel>{};
   final _tasks = <String, TaskModel>{};
+  final _logs = <String, DayLogModel>{};
   final _settings = <String, dynamic>{};
 
   @override
@@ -33,13 +34,16 @@ class InMemoryDatasource extends LocalStorageDatasource {
   Future<void> deleteTask(String id) async => _tasks.remove(id);
 
   @override
-  List<DayLogModel> getDayLogs() => [];
+  List<DayLogModel> getDayLogs() => _logs.values.toList();
 
   @override
-  DayLogModel? getDayLog(String id) => null;
+  DayLogModel? getDayLog(String id) => _logs[id];
 
   @override
-  Future<void> saveDayLog(DayLogModel log) async {}
+  Future<void> saveDayLog(DayLogModel log) async => _logs[log.id] = log;
+
+  @override
+  Future<void> deleteDayLog(String dayLogId) async => _logs.remove(dayLogId);
 
   @override
   dynamic getSetting(String key) => _settings[key];
@@ -47,6 +51,9 @@ class InMemoryDatasource extends LocalStorageDatasource {
   @override
   Future<void> saveSetting(String key, dynamic value) async =>
       _settings[key] = value;
+
+  @override
+  Future<void> deleteSetting(String key) async => _settings.remove(key);
 }
 
 void main() {
@@ -118,7 +125,7 @@ void main() {
       expect(repo.getCycleById(c2.id)!.isActive, isTrue);
     });
 
-    test('no se puede eliminar ninguno de los ciclos activos', () async {
+    test('se puede eliminar un ciclo activo', () async {
       final c = CycleModel.create(
         name: 'X',
         duration: 10,
@@ -128,7 +135,33 @@ void main() {
       await repo.createCycle(c);
       await repo.startCycle(c.id);
 
-      expect(() => repo.deleteCycle(c.id), throwsA(isA<StateError>()));
+      await repo.deleteCycle(c.id);
+      expect(repo.getCycleById(c.id), isNull);
+    });
+
+    test('eliminar ciclo limpia tareas, logs y setting de cierre', () async {
+      final c = CycleModel.create(
+        name: 'Con datos',
+        duration: 10,
+        customDuration: false,
+        sankalpa: 'S',
+      );
+      await repo.createCycle(c);
+      await repo.startCycle(c.id);
+      await repo.createTask(TaskModel.create(cycleId: c.id, title: 'T1'));
+
+      final today = DateTime.now();
+      await repo.closeDay(cycleId: c.id, date: today);
+      expect(ds.getTasks().where((t) => t.cycleId == c.id).length, 1);
+      expect(ds.getDayLogs().where((l) => l.cycleId == c.id).length, 1);
+      expect(ds.getSetting('last_closed_date_${c.id}'), isNotNull);
+
+      await repo.deleteCycle(c.id);
+
+      expect(repo.getCycleById(c.id), isNull);
+      expect(ds.getTasks().where((t) => t.cycleId == c.id), isEmpty);
+      expect(ds.getDayLogs().where((l) => l.cycleId == c.id), isEmpty);
+      expect(ds.getSetting('last_closed_date_${c.id}'), isNull);
     });
   });
 

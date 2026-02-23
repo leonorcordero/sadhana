@@ -17,14 +17,26 @@ class AppSettings {
   static const defaultColor = Color(0xFF5A7D5A); // sage
 
   static const presetColors = [
+    // Naturales profundos
     Color(0xFF5A7D5A), // sage (default)
-    Color(0xFF0B6E4F), // verde esmeralda
-    Color(0xFF00695C), // teal profundo
-    Color(0xFF1565C0), // azul índigo
-    Color(0xFF6A1B9A), // violeta
-    Color(0xFFC62828), // rojo coral
-    Color(0xFFE65100), // naranja tierra
-    Color(0xFF37474F), // gris pizarra
+    Color(0xFF4E6F67), // eucalipto profundo
+    Color(0xFF5D6678), // pizarra azul
+    Color(0xFF7A6A58), // tierra tostada
+    Color(0xFF6E6275), // ciruela humo
+
+    // Medios equilibrados
+    Color(0xFF7FA184), // verde hoja
+    Color(0xFF6F98A1), // azul laguna
+    Color(0xFF8B95B5), // índigo suave
+    Color(0xFFB38A73), // terracota suave
+    Color(0xFFA38EA8), // malva gris
+
+    // Claros útiles (no excesivos)
+    Color(0xFFD5E4D4), // salvia clara
+    Color(0xFFD3E5E3), // menta clara
+    Color(0xFFDCE5F2), // cielo perla
+    Color(0xFFE8DECF), // arena clara
+    Color(0xFFE7E0EA), // lavanda clara
   ];
 
   static const defaultReminderHours = [9, 14, 20];

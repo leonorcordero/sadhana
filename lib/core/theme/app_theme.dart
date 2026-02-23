@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   /// Color sage por defecto (coincide con AppSettings.defaultColor).
@@ -9,71 +8,102 @@ class AppTheme {
 
   static ThemeData light({Color? seed}) {
     final seedColor = seed ?? defaultSeed;
-    final cs = ColorScheme.fromSeed(
+    final baseScheme = ColorScheme.fromSeed(
       seedColor: seedColor,
       brightness: Brightness.light,
+      dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
     );
+    final onPrimary =
+        ThemeData.estimateBrightnessForColor(seedColor) == Brightness.dark
+        ? Colors.white
+        : const Color(0xFF1E2A22);
+    final primaryContainer = Color.alphaBlend(
+      seedColor.withValues(alpha: 0.20),
+      _beige,
+    );
+    final cs = baseScheme.copyWith(
+      primary: seedColor,
+      onPrimary: onPrimary,
+      primaryContainer: primaryContainer,
+      onPrimaryContainer: const Color(0xFF1E2A22),
+    );
+
+    const playfair = 'PlayfairDisplay';
+    const inter = 'Inter';
+    const mono = 'JetBrainsMono';
 
     final textTheme = TextTheme(
       // ── Playfair Display → display, headlines y título de card ───────────
-      displayLarge: GoogleFonts.playfairDisplay(
+      displayLarge: TextStyle(
+        fontFamily: playfair,
         fontSize: 57,
         fontWeight: FontWeight.bold,
         letterSpacing: -0.25,
       ),
-      displayMedium: GoogleFonts.playfairDisplay(
+      displayMedium: TextStyle(
+        fontFamily: playfair,
         fontSize: 45,
         fontWeight: FontWeight.bold,
       ),
-      displaySmall: GoogleFonts.playfairDisplay(
+      displaySmall: TextStyle(
+        fontFamily: playfair,
         fontSize: 36,
         fontWeight: FontWeight.bold,
       ),
-      headlineLarge: GoogleFonts.playfairDisplay(
+      headlineLarge: TextStyle(
+        fontFamily: playfair,
         fontSize: 32,
         fontWeight: FontWeight.bold,
       ),
-      headlineMedium: GoogleFonts.playfairDisplay(
+      headlineMedium: TextStyle(
+        fontFamily: playfair,
         fontSize: 28,
         fontWeight: FontWeight.bold,
       ),
-      headlineSmall: GoogleFonts.playfairDisplay(
+      headlineSmall: TextStyle(
+        fontFamily: playfair,
         fontSize: 24,
         fontWeight: FontWeight.w600,
       ),
-      titleLarge: GoogleFonts.playfairDisplay(
+      titleLarge: TextStyle(
+        fontFamily: playfair,
         fontSize: 22,
         fontWeight: FontWeight.w600,
       ),
       // ── Inter → cuerpo y títulos secundarios ─────────────────────────────
-      titleMedium: GoogleFonts.inter(
+      titleMedium: TextStyle(
+        fontFamily: inter,
         fontSize: 16,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.15,
       ),
-      titleSmall: GoogleFonts.inter(
-        fontSize: 14,
+      titleSmall: TextStyle(
+        fontFamily: inter,
+        fontSize: 15,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.1,
       ),
-      bodyLarge: GoogleFonts.inter(fontSize: 16, letterSpacing: 0.5),
-      bodyMedium: GoogleFonts.inter(fontSize: 14, letterSpacing: 0.25),
-      bodySmall: GoogleFonts.inter(fontSize: 12, letterSpacing: 0.4),
+      bodyLarge: TextStyle(fontFamily: inter, fontSize: 16, letterSpacing: 0.5),
+      bodyMedium: TextStyle(fontFamily: inter, fontSize: 15, letterSpacing: 0.25),
+      bodySmall: TextStyle(fontFamily: inter, fontSize: 14, letterSpacing: 0.3),
       // ── JetBrains Mono → etiquetas de datos (día X/Y, rachas, %) ─────────
-      labelLarge: GoogleFonts.jetBrainsMono(
+      labelLarge: TextStyle(
+        fontFamily: mono,
         fontSize: 14,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.1,
       ),
-      labelMedium: GoogleFonts.jetBrainsMono(
-        fontSize: 12,
+      labelMedium: TextStyle(
+        fontFamily: mono,
+        fontSize: 13,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.5,
       ),
-      labelSmall: GoogleFonts.jetBrainsMono(
-        fontSize: 11,
+      labelSmall: TextStyle(
+        fontFamily: mono,
+        fontSize: 12,
         fontWeight: FontWeight.w400,
-        letterSpacing: 0.5,
+        letterSpacing: 0.35,
       ),
     );
 
@@ -86,13 +116,17 @@ class AppTheme {
       appBarTheme: AppBarTheme(
         centerTitle: false,
         backgroundColor: _beige,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        titleTextStyle: GoogleFonts.playfairDisplay(
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: cs.onSurface,
+        titleTextStyle: TextStyle(
+          fontFamily: playfair,
+          fontSize: 24,
+          fontWeight: FontWeight.w700,
+          color: cs.primary,
         ),
+        iconTheme: IconThemeData(color: cs.primary),
+        actionsIconTheme: IconThemeData(color: cs.primary),
       ),
       // ── Cards: 24 px de radio, borde sutil, sin sombra ────────────────────
       cardTheme: CardThemeData(
@@ -106,7 +140,8 @@ class AppTheme {
       // ── Botones rellenos: 16 px de radio ──────────────────────────────────
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          textStyle: GoogleFonts.inter(
+          textStyle: const TextStyle(
+            fontFamily: inter,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -117,7 +152,8 @@ class AppTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          textStyle: GoogleFonts.inter(
+          textStyle: const TextStyle(
+            fontFamily: inter,
             fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
@@ -128,7 +164,8 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          textStyle: GoogleFonts.inter(
+          textStyle: const TextStyle(
+            fontFamily: inter,
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -158,11 +195,32 @@ class AppTheme {
       chipTheme: const ChipThemeData(shape: StadiumBorder()),
       // ── NavigationBar ──────────────────────────────────────────────────────
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: Colors.white.withValues(alpha: 0.85),
-        indicatorColor: cs.primaryContainer,
+        backgroundColor: cs.primary,
+        indicatorColor: cs.onPrimary.withValues(alpha: 0.16),
         labelTextStyle: WidgetStateProperty.all(
-          GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500),
+          TextStyle(
+            fontFamily: inter,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: cs.onPrimary,
+          ),
         ),
+      ),
+      listTileTheme: ListTileThemeData(
+        titleTextStyle: textTheme.bodyLarge,
+        subtitleTextStyle: textTheme.bodyMedium?.copyWith(
+          color: cs.onSurfaceVariant,
+        ),
+        iconColor: cs.onSurfaceVariant,
+      ),
+      checkboxTheme: CheckboxThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        side: BorderSide(color: cs.outline),
+      ),
+      dividerTheme: DividerThemeData(
+        color: cs.outlineVariant,
+        thickness: 1,
+        space: 1,
       ),
     );
   }

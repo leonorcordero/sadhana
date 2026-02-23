@@ -22,10 +22,7 @@ void workmanagerCallbackDispatcher() {
 
 class BackgroundService {
   Future<void> initialize() async {
-    await Workmanager().initialize(
-      workmanagerCallbackDispatcher,
-      isInDebugMode: false,
-    );
+    await Workmanager().initialize(workmanagerCallbackDispatcher);
 
     await Workmanager().registerPeriodicTask(
       'sadhana_daily_worker',

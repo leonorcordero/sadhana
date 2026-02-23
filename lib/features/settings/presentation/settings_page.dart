@@ -36,143 +36,183 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Ajustes')),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          Text('Nombre de la app', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _nameController,
-            maxLength: 30,
-            decoration: InputDecoration(
-              hintText: AppSettings.defaultName,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+      appBar: AppBar(
+        toolbarHeight: 68,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ajustes'),
+            Text(
+              'Personalización y backup',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              counterText: '',
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.check),
-                onPressed: () {
-                  notifier.setName(_nameController.text);
-                  FocusScope.of(context).unfocus();
-                },
-              ),
-            ),
-            onSubmitted: (v) => notifier.setName(v),
-          ),
-          const SizedBox(height: 32),
-          Text('Color de la app', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: AppSettings.presetColors.map((color) {
-              final isSelected = settings.themeColor == color;
-              return GestureDetector(
-                onTap: () => notifier.setColor(color),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelected
-                          ? theme.colorScheme.onSurface
-                          : Colors.transparent,
-                      width: 3,
-                    ),
-                    boxShadow: isSelected
-                        ? [
-                            BoxShadow(
-                              color: color.withValues(alpha: 0.5),
-                              blurRadius: 8,
-                              spreadRadius: 2,
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: isSelected
-                      ? const Icon(Icons.check, color: Colors.white, size: 20)
-                      : null,
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 32),
-          Text('Notificaciones', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Recordatorios diarios'),
-            value: settings.remindersEnabled,
-            onChanged: (value) => notifier.setRemindersEnabled(value),
-          ),
-          if (settings.remindersEnabled) ...[
-            const SizedBox(height: 8),
-            _HourPickerRow(
-              title: 'Hora 1',
-              value: settings.reminderHours.isNotEmpty
-                  ? settings.reminderHours[0]
-                  : 9,
-              onChanged: (value) {
-                final next = List<int>.from(settings.reminderHours);
-                while (next.length < 3) {
-                  next.add(9);
-                }
-                next[0] = value;
-                notifier.setReminderHours(next);
-              },
-            ),
-            _HourPickerRow(
-              title: 'Hora 2',
-              value: settings.reminderHours.length > 1
-                  ? settings.reminderHours[1]
-                  : 14,
-              onChanged: (value) {
-                final next = List<int>.from(settings.reminderHours);
-                while (next.length < 3) {
-                  next.add(14);
-                }
-                next[1] = value;
-                notifier.setReminderHours(next);
-              },
-            ),
-            _HourPickerRow(
-              title: 'Hora 3',
-              value: settings.reminderHours.length > 2
-                  ? settings.reminderHours[2]
-                  : 20,
-              onChanged: (value) {
-                final next = List<int>.from(settings.reminderHours);
-                while (next.length < 3) {
-                  next.add(20);
-                }
-                next[2] = value;
-                notifier.setReminderHours(next);
-              },
             ),
           ],
-          const SizedBox(height: 32),
-          Text('Backup', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _exportBackup,
-                icon: const Icon(Icons.upload_file_outlined),
-                label: const Text('Exportar JSON'),
+        ),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        children: [
+          // ── Nombre ─────────────────────────────────────────────────────
+          _SectionCard(
+            label: 'NOMBRE',
+            child: TextField(
+              controller: _nameController,
+              maxLength: 30,
+              decoration: InputDecoration(
+                hintText: AppSettings.defaultName,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                counterText: '',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.check),
+                  onPressed: () {
+                    notifier.setName(_nameController.text);
+                    FocusScope.of(context).unfocus();
+                  },
+                ),
               ),
-              OutlinedButton.icon(
-                onPressed: _importBackup,
-                icon: const Icon(Icons.download_for_offline_outlined),
-                label: const Text('Importar JSON'),
-              ),
-            ],
+              onSubmitted: (v) => notifier.setName(v),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Color ──────────────────────────────────────────────────────
+          _SectionCard(
+            label: 'COLOR',
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: AppSettings.presetColors.map((color) {
+                final isSelected = settings.themeColor == color;
+                final checkColor =
+                    ThemeData.estimateBrightnessForColor(color) ==
+                        Brightness.dark
+                    ? Colors.white
+                    : Colors.black87;
+                return GestureDetector(
+                  onTap: () => notifier.setColor(color),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.outlineVariant,
+                        width: 3,
+                      ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: color.withValues(alpha: 0.5),
+                                blurRadius: 8,
+                                spreadRadius: 2,
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: isSelected
+                        ? Icon(Icons.check, color: checkColor, size: 20)
+                        : null,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Notificaciones ─────────────────────────────────────────────
+          _SectionCard(
+            label: 'NOTIFICACIONES',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Recordatorios diarios'),
+                  value: settings.remindersEnabled,
+                  onChanged: (value) => notifier.setRemindersEnabled(value),
+                ),
+                if (settings.remindersEnabled) ...[
+                  const SizedBox(height: 8),
+                  _HourPickerRow(
+                    title: 'Hora 1',
+                    value: settings.reminderHours.isNotEmpty
+                        ? settings.reminderHours[0]
+                        : 9,
+                    onChanged: (value) {
+                      final next = List<int>.from(settings.reminderHours);
+                      while (next.length < 3) {
+                        next.add(9);
+                      }
+                      next[0] = value;
+                      notifier.setReminderHours(next);
+                    },
+                  ),
+                  _HourPickerRow(
+                    title: 'Hora 2',
+                    value: settings.reminderHours.length > 1
+                        ? settings.reminderHours[1]
+                        : 14,
+                    onChanged: (value) {
+                      final next = List<int>.from(settings.reminderHours);
+                      while (next.length < 3) {
+                        next.add(14);
+                      }
+                      next[1] = value;
+                      notifier.setReminderHours(next);
+                    },
+                  ),
+                  _HourPickerRow(
+                    title: 'Hora 3',
+                    value: settings.reminderHours.length > 2
+                        ? settings.reminderHours[2]
+                        : 20,
+                    onChanged: (value) {
+                      final next = List<int>.from(settings.reminderHours);
+                      while (next.length < 3) {
+                        next.add(20);
+                      }
+                      next[2] = value;
+                      notifier.setReminderHours(next);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Backup ─────────────────────────────────────────────────────
+          _SectionCard(
+            label: 'BACKUP',
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _exportBackup,
+                  icon: const Icon(Icons.upload_file_outlined),
+                  label: const Text('Exportar JSON'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _importBackup,
+                  icon: const Icon(Icons.download_for_offline_outlined),
+                  label: const Text('Importar JSON'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -252,6 +292,43 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             child: const Text('Importar'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
       ),
     );
   }

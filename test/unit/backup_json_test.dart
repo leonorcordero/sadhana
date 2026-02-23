@@ -42,11 +42,17 @@ class InMemoryDatasource extends LocalStorageDatasource {
   Future<void> saveDayLog(DayLogModel log) async => _logs[log.id] = log;
 
   @override
+  Future<void> deleteDayLog(String dayLogId) async => _logs.remove(dayLogId);
+
+  @override
   dynamic getSetting(String key) => _settings[key];
 
   @override
   Future<void> saveSetting(String key, dynamic value) async =>
       _settings[key] = value;
+
+  @override
+  Future<void> deleteSetting(String key) async => _settings.remove(key);
 
   @override
   Future<Map<String, dynamic>> exportAllAsJsonMap() async {

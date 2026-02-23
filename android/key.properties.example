@@ -1,0 +1,4 @@
+storePassword=REEMPLAZA_PASSWORD_KEYSTORE
+keyPassword=REEMPLAZA_PASSWORD_ALIAS
+keyAlias=sadhana
+storeFile=/home/leo/sadhana-release-key.jks

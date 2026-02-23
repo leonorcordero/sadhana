@@ -8,6 +8,14 @@ class LocalStorageDatasource {
   static const _schemaVersionKey = 'schema_version';
   static const _currentSchemaVersion = 1;
   static const _customEventsKey = 'custom_calendar_events';
+  static const _externalEventsKey = 'external_calendar_events';
+  static const _externalHiddenEventsKey = 'external_calendar_hidden_event_ids';
+  static const _externalHiddenGroupsKey = 'external_calendar_hidden_groups';
+  static const _externalHiddenTitlesKey = 'external_calendar_hidden_titles';
+  static const _externalCalendarConfigKey = 'external_calendar_config';
+  static const _diaryKey = 'diary_entries';
+  static const _notesKey = 'notes';
+  static const _mandalaResourcesKey = 'mandala_resources';
 
   Future<void> init() async {
     await Hive.initFlutter();
@@ -61,10 +69,18 @@ class LocalStorageDatasource {
     await _dayLogBox.put(log.id, log.toMap());
   }
 
+  Future<void> deleteDayLog(String dayLogId) async {
+    await _dayLogBox.delete(dayLogId);
+  }
+
   dynamic getSetting(String key) => _settingsBox.get(key);
 
   Future<void> saveSetting(String key, dynamic value) async {
     await _settingsBox.put(key, value);
+  }
+
+  Future<void> deleteSetting(String key) async {
+    await _settingsBox.delete(key);
   }
 
   List<Map<String, dynamic>> getCustomEventsRaw() {
@@ -75,6 +91,97 @@ class LocalStorageDatasource {
 
   Future<void> saveCustomEventsRaw(List<Map<String, dynamic>> items) async {
     await _settingsBox.put(_customEventsKey, items);
+  }
+
+  List<Map<String, dynamic>> getExternalEventsRaw() {
+    final list = _settingsBox.get(_externalEventsKey) as List?;
+    if (list == null) return [];
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<void> saveExternalEventsRaw(List<Map<String, dynamic>> items) async {
+    await _settingsBox.put(_externalEventsKey, items);
+  }
+
+  Set<String> getExternalHiddenEventIds() {
+    final list = _settingsBox.get(_externalHiddenEventsKey) as List?;
+    if (list == null) return <String>{};
+    return list.map((e) => e.toString()).toSet();
+  }
+
+  Future<void> saveExternalHiddenEventIds(Set<String> ids) async {
+    await _settingsBox.put(
+      _externalHiddenEventsKey,
+      ids.toList(growable: false),
+    );
+  }
+
+  Set<String> getExternalHiddenGroupKeys() {
+    final list = _settingsBox.get(_externalHiddenGroupsKey) as List?;
+    if (list == null) return <String>{};
+    return list.map((e) => e.toString()).toSet();
+  }
+
+  Future<void> saveExternalHiddenGroupKeys(Set<String> keys) async {
+    await _settingsBox.put(
+      _externalHiddenGroupsKey,
+      keys.toList(growable: false),
+    );
+  }
+
+  Set<String> getExternalHiddenTitleKeys() {
+    final list = _settingsBox.get(_externalHiddenTitlesKey) as List?;
+    if (list == null) return <String>{};
+    return list.map((e) => e.toString()).toSet();
+  }
+
+  Future<void> saveExternalHiddenTitleKeys(Set<String> keys) async {
+    await _settingsBox.put(
+      _externalHiddenTitlesKey,
+      keys.toList(growable: false),
+    );
+  }
+
+  Map<String, dynamic> getExternalCalendarConfig() {
+    final raw = _settingsBox.get(_externalCalendarConfigKey);
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
+    }
+    return {};
+  }
+
+  Future<void> saveExternalCalendarConfig(Map<String, dynamic> config) async {
+    await _settingsBox.put(_externalCalendarConfigKey, config);
+  }
+
+  List<Map<String, dynamic>> getDiaryEntriesRaw() {
+    final list = _settingsBox.get(_diaryKey) as List?;
+    if (list == null) return [];
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<void> saveDiaryEntriesRaw(List<Map<String, dynamic>> items) async {
+    await _settingsBox.put(_diaryKey, items);
+  }
+
+  List<Map<String, dynamic>> getNotesRaw() {
+    final list = _settingsBox.get(_notesKey) as List?;
+    if (list == null) return [];
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<void> saveNotesRaw(List<Map<String, dynamic>> items) async {
+    await _settingsBox.put(_notesKey, items);
+  }
+
+  List<Map<String, dynamic>> getMandalaResourcesRaw() {
+    final list = _settingsBox.get(_mandalaResourcesKey) as List?;
+    if (list == null) return [];
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<void> saveMandalaResourcesRaw(List<Map<String, dynamic>> items) async {
+    await _settingsBox.put(_mandalaResourcesKey, items);
   }
 
   Future<Map<String, dynamic>> exportAllAsJsonMap() async {

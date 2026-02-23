@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/providers.dart';
+import 'package:sadhana/features/cycles/domain/mandala_archetype.dart';
 
 class CycleDetailPage extends ConsumerWidget {
   const CycleDetailPage({super.key, required this.cycleId});
@@ -17,6 +18,7 @@ class CycleDetailPage extends ConsumerWidget {
     }
 
     final tasks = state.tasks.where((t) => t.cycleId == cycle.id).toList();
+    final archetype = MandalaArchetype.fromKey(cycle.archetype);
 
     return Scaffold(
       appBar: AppBar(title: Text(cycle.name)),
@@ -29,6 +31,21 @@ class CycleDetailPage extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      Icon(
+                        archetype?.minimalIcon ??
+                            Icons.self_improvement_outlined,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Tipo: ${archetype?.label ?? 'Personalizado'}',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   Text(
                     'Sankalpa',
                     style: Theme.of(context).textTheme.labelLarge,

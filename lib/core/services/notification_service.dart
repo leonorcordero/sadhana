@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -45,28 +49,65 @@ class NotificationService {
       ..retainWhere((h) => h >= 0 && h <= 23);
     if (normalized.isEmpty) return;
 
+    // Elimina el archivo de SharedPreferences de notificaciones antiguas
+    // para limpiar datos en formato incompatible de versiones anteriores.
+    // Esto permite que cancelAll() y zonedSchedule() funcionen sin errores.
+    await _clearLegacyNotificationPrefs();
+
+    try {
+      await _plugin.cancelAll();
+    } on PlatformException {
+      // Si aún falla (p. ej. el archivo estaba en caché), continuamos.
+    }
+
     for (var i = 0; i < normalized.length; i++) {
       final id = 100 + i;
-      await _plugin.cancel(id);
-      await _plugin.zonedSchedule(
-        id,
-        'Sadhana',
-        'Tienes tareas pendientes. Cierra tu dia con enfoque.',
-        _nextTime(normalized[i]),
-        details,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: DateTimeComponents.time,
-      );
+      try {
+        await _plugin.zonedSchedule(
+          id,
+          'Sadhana',
+          'Tienes tareas pendientes. Cierra tu dia con enfoque.',
+          _nextTime(normalized[i]),
+          details,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          matchDateTimeComponents: DateTimeComponents.time,
+        );
+      } on PlatformException catch (e) {
+        if (e.code == 'exact_alarms_not_permitted') {
+          // Android 14+ puede bloquear alarmas exactas; usamos modo inexacto.
+          try {
+            await _plugin.zonedSchedule(
+              id,
+              'Sadhana',
+              'Tienes tareas pendientes. Cierra tu dia con enfoque.',
+              _nextTime(normalized[i]),
+              details,
+              androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+              uiLocalNotificationDateInterpretation:
+                  UILocalNotificationDateInterpretation.absoluteTime,
+              matchDateTimeComponents: DateTimeComponents.time,
+            );
+          } on PlatformException {
+            // Silenciamos si el modo inexacto también falla.
+          }
+        }
+        // Otros errores se ignoran para no bloquear la app.
+      }
     }
   }
 
   // Cancela los recordatorios pendientes del dia (usados cuando el usuario
   // completo todas sus tareas antes de que llegue el proximo recordatorio).
   Future<void> cancelDailyReminders() async {
+    await _clearLegacyNotificationPrefs();
     for (var i = 0; i < 12; i++) {
-      await _plugin.cancel(100 + i);
+      try {
+        await _plugin.cancel(100 + i);
+      } on PlatformException {
+        // Silencioso si los datos guardados son incompatibles.
+      }
     }
   }
 
@@ -95,5 +136,27 @@ class NotificationService {
       scheduled = scheduled.add(const Duration(days: 1));
     }
     return scheduled;
+  }
+
+  /// Borra el archivo XML de SharedPreferences que usa flutter_local_notifications
+  /// para persistir las notificaciones programadas. Necesario cuando los datos
+  /// guardados con una versión anterior del plugin son incompatibles con la
+  /// versión actual y causan un RuntimeException al deserializarse.
+  Future<void> _clearLegacyNotificationPrefs() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      // getApplicationDocumentsDirectory() devuelve <app>/app_flutter/
+      // el directorio shared_prefs está un nivel arriba: <app>/shared_prefs/
+      final file = File(
+        '${dir.parent.path}/shared_prefs/scheduled_notifications.xml',
+      );
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // Si no se puede borrar, continuamos; el try/catch del plugin manejará
+      // cualquier error posterior.
+    }
   }
 }

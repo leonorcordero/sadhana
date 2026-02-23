@@ -4,6 +4,7 @@ import 'package:sadhana/core/providers.dart';
 import 'package:sadhana/data/models/cycle_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
 import 'package:sadhana/features/cycles/domain/mandala_archetype.dart';
+import 'package:sadhana/features/resources/presentation/resources_page.dart';
 
 // ── Página principal ──────────────────────────────────────────────────────────
 
@@ -15,9 +16,28 @@ class CyclesPage extends ConsumerWidget {
     final cycles = ref.watch(appControllerProvider.select((s) => s.cycles));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mándalas')),
+      appBar: AppBar(
+        toolbarHeight: 68,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Mándalas'),
+            Text(
+              'Tus ciclos de práctica',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1),
+        ),
+      ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
         children: [
           for (final cycle in cycles)
             Padding(
@@ -32,6 +52,22 @@ class CyclesPage extends ConsumerWidget {
                         onConfirm: () => ref
                             .read(appControllerProvider.notifier)
                             .restartCycle(cycle.id),
+                      ),
+                      onDelete: () => _confirmAction(
+                        context,
+                        title: 'Eliminar mandala',
+                        message: 'Esta acción no se puede deshacer.',
+                        onConfirm: () => ref
+                            .read(appControllerProvider.notifier)
+                            .deleteCycle(cycle.id),
+                      ),
+                      onResources: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ResourcesPage(
+                            cycleId: cycle.id,
+                            cycleName: cycle.name,
+                          ),
+                        ),
                       ),
                     )
                   : _InactiveMandalaCard(
@@ -52,13 +88,24 @@ class CyclesPage extends ConsumerWidget {
                             .read(appControllerProvider.notifier)
                             .deleteCycle(cycle.id),
                       ),
+                      onResources: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ResourcesPage(
+                            cycleId: cycle.id,
+                            cycleName: cycle.name,
+                          ),
+                        ),
+                      ),
                     ),
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCreateSheet(context, ref),
-        child: const Icon(Icons.add),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 26),
+        child: FloatingActionButton(
+          onPressed: () => _showCreateSheet(context, ref),
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -107,10 +154,17 @@ class CyclesPage extends ConsumerWidget {
 // ── Tarjeta de mandala activo (expandida, con tareas) ─────────────────────────
 
 class _ActiveMandalaCard extends ConsumerWidget {
-  const _ActiveMandalaCard({required this.cycle, required this.onRestart});
+  const _ActiveMandalaCard({
+    required this.cycle,
+    required this.onRestart,
+    required this.onDelete,
+    required this.onResources,
+  });
 
   final CycleModel cycle;
   final VoidCallback onRestart;
+  final VoidCallback onDelete;
+  final VoidCallback onResources;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -125,9 +179,18 @@ class _ActiveMandalaCard extends ConsumerWidget {
     final archetype = MandalaArchetype.fromKey(cycle.archetype);
     final dayClosed = snapshot.todayLog?.closed ?? false;
     final ratio = snapshot.completionRatio;
+    final displayName = _normalizedMandalaName(cycle.name);
+    final range = _cycleDateRange(cycle);
+    final headerColor =
+        archetype?.softHeaderColor(cs) ?? cs.primary.withValues(alpha: 0.22);
 
     return Card(
       clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -135,29 +198,27 @@ class _ActiveMandalaCard extends ConsumerWidget {
           if (archetype != null)
             Container(
               width: double.infinity,
-              decoration: BoxDecoration(gradient: archetype.gradient),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              height: 66,
+              color: headerColor,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Text(archetype.emoji, style: const TextStyle(fontSize: 28)),
+                  Icon(
+                    archetype.minimalIcon,
+                    size: 20,
+                    color: cs.onPrimaryContainer,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          archetype.label,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: archetype.onColor.withValues(alpha: 0.8),
-                          ),
-                        ),
-                        Text(
-                          cycle.name,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: archetype.onColor,
+                          displayName,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface,
                           ),
                         ),
                       ],
@@ -165,10 +226,9 @@ class _ActiveMandalaCard extends ConsumerWidget {
                   ),
                   Text(
                     'Día ${cycle.currentDay}/${cycle.duration}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: archetype.onColor.withValues(alpha: 0.9),
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.82),
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
@@ -177,23 +237,38 @@ class _ActiveMandalaCard extends ConsumerWidget {
           else
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(cycle.name, style: theme.textTheme.titleLarge),
-                  ),
                   Text(
-                    'Día ${cycle.currentDay}/${cycle.duration}',
-                    style: theme.textTheme.labelMedium?.copyWith(
+                    'Tipo: Personalizado',
+                    style: theme.textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          displayName,
+                          style: theme.textTheme.titleLarge,
+                        ),
+                      ),
+                      Text(
+                        'Día ${cycle.currentDay}/${cycle.duration}',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
 
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -205,6 +280,13 @@ class _ActiveMandalaCard extends ConsumerWidget {
                     color: cs.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(height: 6),
+                Text(
+                  'Inicio: ${_formatDate(range.start)}   Fin: ${_formatDate(range.end)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
                 const SizedBox(height: 12),
 
                 // Racha + progreso %
@@ -212,16 +294,9 @@ class _ActiveMandalaCard extends ConsumerWidget {
                   children: [
                     _StatChip(
                       icon: Icons.local_fire_department,
-                      iconColor: Colors.deepOrange,
+                      iconColor: cs.primary,
                       label: 'Racha',
                       value: '${cycle.streakCurrent}',
-                    ),
-                    const SizedBox(width: 8),
-                    _StatChip(
-                      icon: Icons.emoji_events,
-                      iconColor: Colors.amber.shade700,
-                      label: 'Máxima',
-                      value: '${cycle.streakMax}',
                     ),
                     const Spacer(),
                     TweenAnimationBuilder<double>(
@@ -287,13 +362,19 @@ class _ActiveMandalaCard extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton.icon(
+                      onPressed: onResources,
+                      icon: const Icon(Icons.folder_outlined, size: 16),
+                      label: const Text('Recursos'),
+                    ),
+                    const SizedBox(width: 4),
+                    TextButton.icon(
                       onPressed: onRestart,
                       icon: const Icon(Icons.replay, size: 16),
                       label: const Text('Reiniciar'),
                     ),
                     const SizedBox(width: 4),
                     TextButton.icon(
-                      onPressed: null,
+                      onPressed: onDelete,
                       icon: const Icon(Icons.delete_outline, size: 16),
                       label: const Text('Eliminar'),
                       style: TextButton.styleFrom(foregroundColor: cs.error),
@@ -316,30 +397,37 @@ class _InactiveMandalaCard extends StatelessWidget {
     required this.cycle,
     required this.onRestart,
     required this.onDelete,
+    required this.onResources,
   });
 
   final CycleModel cycle;
   final VoidCallback onRestart;
   final VoidCallback onDelete;
+  final VoidCallback onResources;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final archetype = MandalaArchetype.fromKey(cycle.archetype);
+    final displayName = _normalizedMandalaName(cycle.name);
+    final range = _cycleDateRange(cycle);
+    final sideColor =
+        archetype?.softHeaderColor(cs) ?? cs.primary.withValues(alpha: 0.22);
 
     return Card(
       clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Barra lateral de color
-            if (archetype != null)
-              Container(
-                width: 6,
-                decoration: BoxDecoration(gradient: archetype.gradient),
-              ),
+            if (archetype != null) Container(width: 5, color: sideColor),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -351,9 +439,10 @@ class _InactiveMandalaCard extends StatelessWidget {
                     if (archetype != null)
                       Padding(
                         padding: const EdgeInsets.only(right: 10),
-                        child: Text(
-                          archetype.emoji,
-                          style: const TextStyle(fontSize: 22),
+                        child: Icon(
+                          archetype.minimalIcon,
+                          size: 20,
+                          color: cs.onSurfaceVariant,
                         ),
                       ),
                     Expanded(
@@ -361,10 +450,27 @@ class _InactiveMandalaCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(cycle.name, style: theme.textTheme.titleMedium),
+                          Text(displayName, style: theme.textTheme.titleMedium),
+                          Text(
+                            'Tipo: ${archetype?.label ?? 'Personalizado'}',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           Text(
                             '${cycle.duration} días · ${cycle.sankalpa}',
-                            style: theme.textTheme.bodySmall?.copyWith(
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'Inicio: ${_formatDate(range.start)} · Fin: ${_formatDate(range.end)}',
+                            style: theme.textTheme.labelMedium?.copyWith(
                               color: cs.onSurfaceVariant,
                             ),
                             maxLines: 1,
@@ -376,6 +482,12 @@ class _InactiveMandalaCard extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          icon: const Icon(Icons.folder_outlined),
+                          tooltip: 'Recursos',
+                          onPressed: onResources,
+                          visualDensity: VisualDensity.compact,
+                        ),
                         IconButton(
                           icon: const Icon(Icons.replay),
                           tooltip: 'Reiniciar',
@@ -402,6 +514,46 @@ class _InactiveMandalaCard extends StatelessWidget {
   }
 }
 
+String _normalizedMandalaName(String raw) {
+  final cleaned = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (cleaned.isEmpty) return 'Mandala';
+  return cleaned
+      .split(' ')
+      .map((w) {
+        if (w.isEmpty) return w;
+        return '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}';
+      })
+      .join(' ');
+}
+
+({DateTime start, DateTime end}) _cycleDateRange(CycleModel cycle) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final dayInCycle = cycle.currentDay.clamp(1, cycle.duration);
+  final start = today.subtract(Duration(days: dayInCycle - 1));
+  final end = start.add(Duration(days: cycle.duration - 1));
+  return (start: start, end: end);
+}
+
+String _formatDate(DateTime d) {
+  final day = d.day.toString().padLeft(2, '0');
+  final month = d.month.toString().padLeft(2, '0');
+  return '$day/$month/${d.year}';
+}
+
+String _normalizedTaskTitle(String raw) {
+  final cleaned = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (cleaned.isEmpty) return 'Tarea';
+  return cleaned
+      .split(' ')
+      .map((word) {
+        if (word.isEmpty) return word;
+        if (word.length <= 2) return word.toUpperCase();
+        return '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}';
+      })
+      .join(' ');
+}
+
 // ── Tile de tarea con animación ───────────────────────────────────────────────
 
 class _TaskTile extends StatelessWidget {
@@ -420,6 +572,7 @@ class _TaskTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return CheckboxListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
@@ -427,17 +580,21 @@ class _TaskTile extends StatelessWidget {
       onChanged: onChanged,
       title: AnimatedDefaultTextStyle(
         duration: const Duration(milliseconds: 200),
-        style: theme.textTheme.bodyMedium!.copyWith(
+        style: theme.textTheme.bodyLarge!.copyWith(
+          fontWeight: FontWeight.w700,
           decoration: checked ? TextDecoration.lineThrough : null,
-          color: checked
-              ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-              : theme.colorScheme.onSurface,
+          color: checked ? cs.onSurface.withValues(alpha: 0.45) : cs.onSurface,
         ),
-        child: Text(task.title),
+        child: Text(_normalizedTaskTitle(task.title)),
       ),
       subtitle: task.description == null
           ? null
-          : Text(task.description!, style: theme.textTheme.bodySmall),
+          : Text(
+              task.description!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
     );
   }
 }
@@ -461,10 +618,10 @@ class _StatChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -489,7 +646,6 @@ class _CreateCycleSheet extends StatefulWidget {
 }
 
 class _CreateCycleSheetState extends State<_CreateCycleSheet> {
-  final _nameController = TextEditingController();
   final _sankalpaController = TextEditingController();
   final _customDurationController = TextEditingController();
   final _customArchetypeController = TextEditingController();
@@ -501,31 +657,10 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
   static const _defaultTaskTitles = ['Meditación', 'Japa', 'Kriyas', 'Fuego'];
   late final Map<String, bool> _defaultTaskSelected;
   late final Map<String, TextEditingController> _defaultTaskCommentControllers;
-  String? _nameError;
   String? _sankalpaError;
   String? _durationError;
 
   static const _presetDurations = [7, 14, 21, 42];
-  static const _templates = <_MandalaTemplate>[
-    _MandalaTemplate(
-      name: 'Sadhana matutina',
-      sankalpa: 'Comenzar el dia con presencia y devocion.',
-      defaultTasks: ['Meditación', 'Japa'],
-      duration: 21,
-    ),
-    _MandalaTemplate(
-      name: 'Bhakti diaria',
-      sankalpa: 'Cultivar corazon abierto y gratitud.',
-      defaultTasks: ['Japa', 'Fuego'],
-      duration: 40,
-    ),
-    _MandalaTemplate(
-      name: 'Purificacion',
-      sankalpa: 'Sostener disciplina interna con claridad.',
-      defaultTasks: ['Kriyas', 'Meditación'],
-      duration: 14,
-    ),
-  ];
 
   @override
   void initState() {
@@ -540,7 +675,6 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
 
   @override
   void dispose() {
-    _nameController.dispose();
     _sankalpaController.dispose();
     _customDurationController.dispose();
     _customArchetypeController.dispose();
@@ -642,32 +776,6 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Nombre ────────────────────────────────────────────
-                  _SectionLabel('Nombre', theme),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _templates
-                        .map(
-                          (t) => ActionChip(
-                            label: Text(t.name),
-                            onPressed: () => _applyTemplate(t),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _nameController,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(
-                      hintText: 'Ej. Meditación matutina',
-                      errorText: _nameError,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
                   // ── Sankalpa ──────────────────────────────────────────
                   _SectionLabel('Sankalpa', theme),
                   const SizedBox(height: 4),
@@ -702,10 +810,11 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
                     (title) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Container(
-                        padding: const EdgeInsets.all(10),
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
                         decoration: BoxDecoration(
-                          color: cs.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(10),
+                          color: cs.surfaceContainerHigh,
+                          border: Border.all(color: cs.outlineVariant),
+                          borderRadius: BorderRadius.circular(14),
                         ),
                         child: Column(
                           children: [
@@ -718,8 +827,17 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
                               },
                               dense: true,
                               contentPadding: EdgeInsets.zero,
+                              activeColor: cs.primary,
+                              checkColor: cs.onPrimary,
                               controlAffinity: ListTileControlAffinity.leading,
-                              title: Text(title),
+                              title: Text(
+                                title,
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: const Color(0xFF1D2A1D),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 17,
+                                ),
+                              ),
                             ),
                             TextField(
                               controller: _defaultTaskCommentControllers[title],
@@ -744,7 +862,13 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
                         size: 8,
                         color: cs.onSurfaceVariant,
                       ),
-                      title: Text(_pendingTasks[i].title),
+                      title: Text(
+                        _normalizedTaskTitle(_pendingTasks[i].title),
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       subtitle: _pendingTasks[i].description != null
                           ? Text(_pendingTasks[i].description!)
                           : null,
@@ -779,18 +903,14 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
   }
 
   void _submit() {
-    final name = _nameController.text.trim();
     final sankalpa = _sankalpaController.text.trim();
     final duration = _effectiveDuration;
 
     setState(() {
-      _nameError = name.isEmpty ? 'El nombre es obligatorio' : null;
       _sankalpaError = sankalpa.isEmpty ? 'El sankalpa es obligatorio' : null;
       _durationError = duration < 1 ? 'Duración inválida' : null;
     });
-    if (_nameError != null ||
-        _sankalpaError != null ||
-        _durationError != null) {
+    if (_sankalpaError != null || _durationError != null) {
       if (_durationError != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('La duración debe ser mayor a 0')),
@@ -804,6 +924,12 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
       final custom = _customArchetypeController.text.trim();
       archetypeKey = custom.isNotEmpty ? custom : 'otro';
     }
+    final generatedTypeLabel = _selectedArchetype?.key == 'otro'
+        ? (_customArchetypeController.text.trim().isEmpty
+              ? 'Otro'
+              : _customArchetypeController.text.trim())
+        : (_selectedArchetype?.label ?? 'Libre');
+    final name = 'Mandala $generatedTypeLabel';
 
     final defaultTasks = <({String title, String? description})>[];
     for (final title in _defaultTaskTitles) {
@@ -832,18 +958,6 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
   Future<void> _addTask() async {
     final task = await _showAddTaskDialog(context);
     if (task != null) setState(() => _pendingTasks.add(task));
-  }
-
-  void _applyTemplate(_MandalaTemplate template) {
-    setState(() {
-      _nameController.text = template.name;
-      _sankalpaController.text = template.sankalpa;
-      _selectedDuration = template.duration;
-      _showCustomDuration = false;
-      for (final title in _defaultTaskTitles) {
-        _defaultTaskSelected[title] = template.defaultTasks.contains(title);
-      }
-    });
   }
 
   Future<({String title, String? description})?> _showAddTaskDialog(
@@ -885,7 +999,10 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
               final description = descCtrl.text.trim().isEmpty
                   ? null
                   : descCtrl.text.trim();
-              Navigator.pop(ctx, (title: title, description: description));
+              Navigator.pop(ctx, (
+                title: _normalizedTaskTitle(title),
+                description: description,
+              ));
             },
             child: const Text('Agregar'),
           ),
@@ -893,20 +1010,6 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
       ),
     );
   }
-}
-
-class _MandalaTemplate {
-  const _MandalaTemplate({
-    required this.name,
-    required this.sankalpa,
-    required this.defaultTasks,
-    required this.duration,
-  });
-
-  final String name;
-  final String sankalpa;
-  final List<String> defaultTasks;
-  final int duration;
 }
 
 // ── Etiqueta de sección ───────────────────────────────────────────────────────
@@ -967,12 +1070,13 @@ class _ArchetypeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final onColor = archetype.onColor;
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Center(
         child: AnimatedContainer(
-          width: 88,
-          height: 88,
+          width: 92,
+          height: 92,
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
           decoration: BoxDecoration(
@@ -997,13 +1101,13 @@ class _ArchetypeCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(archetype.emoji, style: const TextStyle(fontSize: 19)),
+              Icon(archetype.minimalIcon, size: 18, color: onColor),
               const SizedBox(height: 1),
               Text(
                 archetype.label,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 10.5,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: 11.5,
                   height: 1.1,
                   fontWeight: FontWeight.w700,
                   color: onColor,
