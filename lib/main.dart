@@ -6,6 +6,7 @@ import 'package:sadhana/core/services/background_service.dart';
 import 'package:sadhana/core/services/ios_background_fetch_service.dart';
 import 'package:sadhana/core/services/notification_service.dart';
 import 'package:sadhana/core/theme/app_theme.dart';
+import 'package:sadhana/core/utils/responsive_utils.dart';
 import 'package:sadhana/data/datasources/local_storage_datasource.dart';
 import 'package:sadhana/features/app_shell/presentation/home_shell.dart';
 
@@ -49,6 +50,31 @@ class SadhanaApp extends ConsumerWidget {
       title: settings.name,
       theme: AppTheme.light(seed: settings.themeColor),
       debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        final typeScale =
+            (ResponsiveUtils.typographyScale(context) * settings.textScale)
+                .clamp(0.78, 1.06);
+        final textScale =
+            (ResponsiveUtils.textScaleFactor(context) * settings.textScale)
+                .clamp(0.85, 1.12);
+        final theme = Theme.of(context);
+        final scaledTheme = theme.copyWith(
+          textTheme: ResponsiveUtils.scaledTextTheme(
+            theme.textTheme,
+            typeScale,
+          ),
+          primaryTextTheme: ResponsiveUtils.scaledTextTheme(
+            theme.primaryTextTheme,
+            typeScale,
+          ),
+        );
+        final media = MediaQuery.of(context);
+
+        return MediaQuery(
+          data: media.copyWith(textScaler: TextScaler.linear(textScale)),
+          child: Theme(data: scaledTheme, child: child ?? const SizedBox()),
+        );
+      },
       home: const HomeShell(),
     );
   }

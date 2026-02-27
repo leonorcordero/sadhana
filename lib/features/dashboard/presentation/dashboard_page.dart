@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/providers.dart';
+import 'package:sadhana/core/utils/responsive_utils.dart';
 import 'package:sadhana/core/utils/date_utils.dart';
 import 'package:sadhana/core/utils/moon_phase_utils.dart';
 import 'package:sadhana/data/models/cycle_model.dart';
@@ -9,7 +11,8 @@ import 'package:sadhana/data/repositories/sadhana_repository.dart';
 import 'package:sadhana/features/calendar/presentation/calendar_page.dart';
 import 'package:sadhana/features/cycles/domain/mandala_archetype.dart';
 import 'package:sadhana/features/cycles/presentation/cycles_page.dart';
-import 'package:sadhana/features/diary/presentation/diary_page.dart';
+import 'package:sadhana/features/resources/presentation/wednesday_affirmation_page.dart';
+import 'package:sadhana/features/settings/presentation/settings_page.dart';
 
 // ── Nombres localizados ────────────────────────────────────────────────────────
 
@@ -38,15 +41,16 @@ const _weekdays = [
   'domingo',
 ];
 
-const _affirmationOptions = [
+const _affirmationOptions = <String>[];
+const _emanationOptions = <String>[];
+const _legacyAffirmationOptions = [
   'Hoy sostengo mi disciplina con calma.',
   'Mi constancia diaria transforma mi vida.',
   'Elijo presencia, enfoque y devoción.',
   'Cada acción consciente fortalece mi sankalpa.',
   'Soy estable en mi práctica, incluso en días difíciles.',
 ];
-
-const _emanationOptions = [
+const _legacyEmanationOptions = [
   'Emano serenidad y claridad en cada paso.',
   'Emano gratitud, paciencia y buena voluntad.',
   'Emano luz interior para sostener mi práctica.',
@@ -75,6 +79,8 @@ class DashboardPage extends ConsumerWidget {
     final calendarDay = state.selectedDate;
 
     final moonName = MoonPhaseUtils.phaseName(today);
+    final isNewMoon = MoonPhaseUtils.phaseEmoji(today) == '🌑';
+    final moonCardTexts = repo.getMoonCardTexts();
     final calendarDayEventTitles = repo.getVisibleEventTitlesForDate(
       calendarDay,
     );
@@ -82,44 +88,72 @@ class DashboardPage extends ConsumerWidget {
     final completedMandalaCount = repo
         .getCompletedMandalaTasksForDay(today)
         .length;
+    final isCompactLayout = ResponsiveUtils.isNarrowPhone(context);
+    final spacingScale = ResponsiveUtils.spacingScale(context);
 
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        padding: EdgeInsets.fromLTRB(
+          16 * spacingScale,
+          20 * spacingScale,
+          16 * spacingScale,
+          132 * spacingScale,
+        ),
         children: [
-          _Header(appName: settings.name, date: today),
-          const SizedBox(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _MoonCard(
-                  moonName: moonName,
-                  showNightWarning: moonName.toLowerCase().contains(
-                    'creciente',
+          _Header(
+            appName: settings.name,
+            date: today,
+            appIconPath: settings.iconPath,
+          ),
+          SizedBox(height: 24 * spacingScale),
+          if (isCompactLayout) ...[
+            _MoonCard(
+              moonName: moonName,
+              showNightWarning: moonName.toLowerCase().contains('creciente'),
+              showDayOnlyHint: isNewMoon,
+              nightWarningText: moonCardTexts.nightWarningText,
+              dayOnlyText: moonCardTexts.dayOnlyText,
+            ),
+            SizedBox(height: 10 * spacingScale),
+            _SpecialDayCard(
+              date: calendarDay,
+              eventTitles: calendarDayEventTitles,
+            ),
+          ] else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _MoonCard(
+                    moonName: moonName,
+                    showNightWarning: moonName.toLowerCase().contains(
+                      'creciente',
+                    ),
+                    showDayOnlyHint: isNewMoon,
+                    nightWarningText: moonCardTexts.nightWarningText,
+                    dayOnlyText: moonCardTexts.dayOnlyText,
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SpecialDayCard(
-                  date: calendarDay,
-                  eventTitles: calendarDayEventTitles,
+                SizedBox(width: 10 * spacingScale),
+                Expanded(
+                  child: _SpecialDayCard(
+                    date: calendarDay,
+                    eventTitles: calendarDayEventTitles,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+              ],
+            ),
+          SizedBox(height: 12 * spacingScale),
           const _AffirmationsCard(),
-          const SizedBox(height: 12),
+          SizedBox(height: 12 * spacingScale),
           _DiaryTodayCard(
             taskCount: completedMandalaCount,
             extraTaskCount: diaryEntry.extraTasks.length,
             noteCount: diaryEntry.manualEntries.length,
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: 20 * spacingScale),
           const _MandalasSectionBand(),
-          const SizedBox(height: 12),
+          SizedBox(height: 12 * spacingScale),
 
           // ── Ciclos activos ───────────────────────────────────────────────
           if (cycles.isEmpty)
@@ -127,7 +161,7 @@ class DashboardPage extends ConsumerWidget {
           else
             for (final cycle in cycles) ...[
               _CycleBadge(cycle: cycle),
-              const SizedBox(height: 10),
+              SizedBox(height: 10 * spacingScale),
               _CycleCard(
                 cycle: cycle,
                 snapshot: repo.getDashboardSnapshotForCycle(
@@ -135,7 +169,7 @@ class DashboardPage extends ConsumerWidget {
                   date: state.selectedDate,
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16 * spacingScale),
             ],
         ],
       ),
@@ -146,71 +180,142 @@ class DashboardPage extends ConsumerWidget {
 // ── Cabecera ──────────────────────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
-  const _Header({required this.appName, required this.date});
+  const _Header({
+    required this.appName,
+    required this.date,
+    required this.appIconPath,
+  });
 
   final String appName;
   final DateTime date;
+  final String? appIconPath;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final typeScale = ResponsiveUtils.typographyScale(context);
+
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: Text(
-            appName,
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.primary,
-              fontSize: 38,
-              height: 1,
-            ),
-          ),
+          flex: 5,
+          child: _buildName(theme: theme, typeScale: typeScale),
         ),
-        InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () {
+        Flexible(
+          flex: 4,
+          child: _buildDateTime(context: context, theme: theme, alignEnd: true),
+        ),
+        const SizedBox(width: 6),
+        IconButton(
+          tooltip: 'Ajustes',
+          icon: Icon(
+            Icons.settings_outlined,
+            size: 22,
+            color: theme.colorScheme.primary,
+          ),
+          onPressed: () {
             Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const CalendarPage()));
+            ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
           },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '${_capitalize(_formatWeekday(date))}, ${date.day} De ${_capitalize(_months[date.month - 1])}',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildName({required ThemeData theme, required double typeScale}) {
+    return Row(
+      children: [
+        if (appIconPath != null &&
+            appIconPath!.trim().isNotEmpty &&
+            File(appIconPath!).existsSync()) ...[
+          Container(
+            width: 42,
+            height: 42,
+            margin: const EdgeInsets.only(right: 10),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Image.file(File(appIconPath!), fit: BoxFit.cover),
+          ),
+        ],
+        Expanded(
+          child: SizedBox(
+            height: 48,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                appName,
+                maxLines: 1,
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.primary,
+                  fontSize: 34 * typeScale,
+                  height: 1,
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _formatTime(date),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.calendar_month_outlined,
-                      size: 22,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildDateTime({
+    required BuildContext context,
+    required ThemeData theme,
+    required bool alignEnd,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const CalendarPage()));
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        child: Column(
+          crossAxisAlignment: alignEnd
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_capitalize(_formatWeekday(date))}, ${date.day} De ${_capitalize(_months[date.month - 1])}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+                fontSize: (theme.textTheme.titleSmall?.fontSize ?? 15) - 0.6,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _formatTime(date),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.calendar_month_outlined,
+                  size: 22,
+                  color: theme.colorScheme.primary,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -218,18 +323,28 @@ class _Header extends StatelessWidget {
 // ── Tarjeta de fase lunar ─────────────────────────────────────────────────────
 
 class _MoonCard extends StatelessWidget {
-  const _MoonCard({required this.moonName, required this.showNightWarning});
+  const _MoonCard({
+    required this.moonName,
+    required this.showNightWarning,
+    required this.showDayOnlyHint,
+    required this.nightWarningText,
+    required this.dayOnlyText,
+  });
 
   final String moonName;
   final bool showNightWarning;
+  final bool showDayOnlyHint;
+  final String nightWarningText;
+  final String dayOnlyText;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final titleSmallSize = theme.textTheme.titleSmall?.fontSize ?? 15;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
       decoration: BoxDecoration(
         color: cs.primary.withValues(alpha: 0.08),
         border: Border.all(color: cs.outlineVariant),
@@ -240,26 +355,42 @@ class _MoonCard extends StatelessWidget {
         children: [
           Text(
             MoonPhaseUtils.phaseEmoji(DateTime.now()),
-            style: const TextStyle(fontSize: 32),
+            style: const TextStyle(fontSize: 26),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   _cleanMoonName(moonName),
-                  style: theme.textTheme.titleMedium?.copyWith(
+                  style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    fontSize: titleSmallSize - 1,
+                    height: 1.1,
                   ),
                 ),
                 if (showNightWarning) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
-                    'NO SE PUEDE HACER SADHANA DE NOCHE.',
+                    nightWarningText,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: cs.error,
                       fontWeight: FontWeight.w700,
+                      fontSize: 10.8,
+                      height: 1.15,
+                    ),
+                  ),
+                ],
+                if (showDayOnlyHint) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    dayOnlyText,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.error,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10.8,
+                      height: 1.15,
                     ),
                   ),
                 ],
@@ -489,6 +620,22 @@ class _CycleCard extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  if (pending.isNotEmpty)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CyclesPage(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.playlist_add_check, size: 16),
+                        label: const Text('Completar ahora'),
+                      ),
+                    ),
+                  if (pending.isNotEmpty) const SizedBox(height: 8),
                   if ((snapshot.todayLog?.closed ?? false) == false &&
                       pending.isEmpty)
                     FilledButton(
@@ -518,21 +665,19 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 16, 0, 72),
+      child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('🪷', style: const TextStyle(fontSize: 48)),
-            const SizedBox(height: 16),
             Text(
               'Aún no tienes mandalas activos.',
               style: theme.textTheme.titleSmall?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: onCreateTap,
               icon: const Icon(Icons.add),
@@ -553,21 +698,23 @@ class _AffirmationsCard extends ConsumerStatefulWidget {
 }
 
 class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
-  String _type = 'affirmation';
   String? _text;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_cleanupLegacyPhrases);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final sectionTitleSize = (theme.textTheme.titleSmall?.fontSize ?? 15) - 1.2;
     final repo = ref.read(repositoryProvider);
     final saved = repo.getHomePhraseSelection();
-    final seed = DateTime.now().day + DateTime.now().month * 31;
-    final fallback = _affirmationOptions[seed % _affirmationOptions.length];
-
-    final type = _text == null ? (saved?.type ?? _type) : _type;
-    final phrase = _text ?? saved?.text ?? fallback;
-    final title = type == 'emanation' ? 'EMANACIONES' : 'AFIRMACIONES';
+    final savedType = saved?.type;
+    final title = savedType == 'emanation' ? 'EMANACIONES' : 'AFIRMACIONES';
 
     return Card(
       elevation: 0,
@@ -576,7 +723,7 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
         side: BorderSide(color: cs.outlineVariant),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -587,25 +734,55 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
                   style: theme.textTheme.titleSmall?.copyWith(
                     letterSpacing: 1.4,
                     fontWeight: FontWeight.w800,
+                    fontSize: sectionTitleSize,
                   ),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => _openPhraseMenu(context, repo),
-                  icon: const Icon(Icons.tune, size: 16),
-                  label: const Text('Elegir'),
                 ),
               ],
             ),
             const SizedBox(height: 6),
-            Text(
-              '"$phrase"',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
-                fontSize: 18,
-                height: 1.25,
-              ),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                  ),
+                  onPressed: () => _openPhraseMenu(context, repo),
+                  icon: const Icon(Icons.menu_book_outlined, size: 14),
+                  label: const Text('Diarias'),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const WednesdayAffirmationPage(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 14),
+                  label: const Text('Miércoles'),
+                ),
+              ],
             ),
           ],
         ),
@@ -618,16 +795,12 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
     SadhanaRepository repo,
   ) async {
     final saved = repo.getHomePhraseSelection();
-    String workingType = _text == null ? (saved?.type ?? _type) : _type;
-    String workingText = _text ?? saved?.text ?? _affirmationOptions.first;
+    const workingType = 'affirmation';
+    String workingText =
+        (_text ?? saved?.text ?? _initialPhrase(repo, workingType)).trim();
 
-    if (workingType == 'emanation' &&
-        !_emanationOptions.contains(workingText)) {
-      workingText = _emanationOptions.first;
-    }
-    if (workingType != 'emanation' &&
-        !_affirmationOptions.contains(workingText)) {
-      workingText = _affirmationOptions.first;
+    if (!_optionsForType(repo, workingType).contains(workingText)) {
+      workingText = _initialPhrase(repo, workingType);
     }
 
     await showModalBottomSheet<void>(
@@ -637,135 +810,281 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
       builder: (ctx) {
         final theme = Theme.of(ctx);
         final cs = theme.colorScheme;
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            final baseOptions = workingType == 'emanation'
-                ? _emanationOptions
-                : _affirmationOptions;
-            final customOptions = repo.getCustomHomePhrases(type: workingType);
-            final options = <String>[...baseOptions, ...customOptions];
+        return FractionallySizedBox(
+          heightFactor: 0.88,
+          child: StatefulBuilder(
+            builder: (ctx, setModalState) {
+              final customOptions = repo.getCustomHomePhrases(
+                type: workingType,
+              );
+              final selectedIsCustom = customOptions.any(
+                (item) => item.toLowerCase() == workingText.toLowerCase(),
+              );
 
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                16,
-                20,
-                MediaQuery.of(ctx).viewInsets.bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Menú de afirmaciones y emanaciones',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment<String>(
-                        value: 'affirmation',
-                        label: Text('Afirmaciones'),
+              return Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  16,
+                  20,
+                  MediaQuery.of(ctx).viewInsets.bottom + 20,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.max,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Menú de afirmaciones',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
-                      ButtonSegment<String>(
-                        value: 'emanation',
-                        label: Text('Emanaciones'),
-                      ),
-                    ],
-                    selected: {workingType},
-                    onSelectionChanged: (value) {
-                      setModalState(() {
-                        workingType = value.first;
-                        workingText = workingType == 'emanation'
-                            ? _emanationOptions.first
-                            : _affirmationOptions.first;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        final added = await _showAddPhraseDialog(
-                          ctx,
-                          type: workingType,
-                        );
-                        if (!mounted) return;
-                        if (added != null && added.isNotEmpty) {
-                          setModalState(() {
-                            workingText = added;
-                          });
-                        }
-                      },
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('Agregar frase escrita'),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: options
-                          .map(
-                            (option) => ListTile(
-                              dense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                              ),
-                              onTap: () =>
-                                  setModalState(() => workingText = option),
-                              leading: Icon(
-                                workingText == option
-                                    ? Icons.check_circle
-                                    : Icons.circle_outlined,
-                                color: workingText == option
-                                    ? cs.primary
-                                    : cs.onSurfaceVariant,
-                                size: 20,
-                              ),
-                              title: Text(
-                                option,
-                                style: theme.textTheme.bodyMedium,
-                              ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Afirmación elegida para mostrar:',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(minHeight: 96),
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: cs.outlineVariant),
+                      ),
+                      child: Text(
+                        workingText.trim().isEmpty
+                            ? 'Sin afirmación seleccionada'
+                            : workingText,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: cs.onSurface,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          Theme(
+                            data: theme.copyWith(
+                              dividerColor: Colors.transparent,
                             ),
-                          )
-                          .toList(),
+                            child: ExpansionTile(
+                              tilePadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              childrenPadding: const EdgeInsets.only(bottom: 4),
+                              title: Text(
+                                'Mis afirmaciones',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              children: [
+                                if (customOptions.isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      6,
+                                      2,
+                                      6,
+                                      8,
+                                    ),
+                                    child: Text(
+                                      'No tienes afirmaciones personalizadas todavía.',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ),
+                                for (final option in customOptions)
+                                  ListTile(
+                                    dense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    onTap: () => setModalState(
+                                      () => workingText = option,
+                                    ),
+                                    leading: Icon(
+                                      workingText == option
+                                          ? Icons.check_circle
+                                          : Icons.circle_outlined,
+                                      color: workingText == option
+                                          ? cs.primary
+                                          : cs.onSurfaceVariant,
+                                      size: 20,
+                                    ),
+                                    title: Text(
+                                      option,
+                                      style: theme.textTheme.bodyMedium,
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          tooltip: 'Editar afirmación',
+                                          icon: Icon(
+                                            Icons.edit_outlined,
+                                            size: 18,
+                                            color: cs.primary,
+                                          ),
+                                          onPressed: () async {
+                                            final edited =
+                                                await _showAddPhraseDialog(
+                                                  ctx,
+                                                  type: workingType,
+                                                  initialText: option,
+                                                  previousText: option,
+                                                );
+                                            if (!mounted) return;
+                                            if (edited != null &&
+                                                edited.trim().isNotEmpty) {
+                                              setModalState(() {
+                                                if (workingText == option) {
+                                                  workingText = edited;
+                                                }
+                                              });
+                                            }
+                                          },
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Eliminar afirmación',
+                                          icon: Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
+                                            color: cs.error,
+                                          ),
+                                          onPressed: () async {
+                                            await repo.removeCustomHomePhrase(
+                                              type: 'affirmation',
+                                              text: option,
+                                            );
+                                            if (!mounted) return;
+                                            setModalState(() {
+                                              if (workingText == option) {
+                                                final refreshedCustom = repo
+                                                    .getCustomHomePhrases(
+                                                      type: 'affirmation',
+                                                    );
+                                                workingText =
+                                                    refreshedCustom.isEmpty
+                                                    ? ''
+                                                    : refreshedCustom.first;
+                                              }
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () async {
+                                      final added = await _showAddPhraseDialog(
+                                        ctx,
+                                        type: workingType,
+                                      );
+                                      if (!mounted) return;
+                                      if (added != null && added.isNotEmpty) {
+                                        setModalState(() {
+                                          workingText = added;
+                                        });
+                                      }
+                                    },
+                                    icon: const Icon(Icons.add, size: 16),
+                                    label: const Text('Agregar afirmación'),
+                                  ),
+                                ),
+                                if (selectedIsCustom) ...[
+                                  const SizedBox(height: 6),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () async {
+                                        final edited =
+                                            await _showAddPhraseDialog(
+                                              ctx,
+                                              type: workingType,
+                                              initialText: workingText,
+                                              previousText: workingText,
+                                            );
+                                        if (!mounted) return;
+                                        if (edited != null &&
+                                            edited.trim().isNotEmpty) {
+                                          setModalState(() {
+                                            workingText = edited;
+                                          });
+                                        }
+                                      },
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text(
+                                        'Editar afirmación elegida',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('Cancelar'),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: () async {
-                          await repo.saveHomePhraseSelection(
-                            type: workingType,
-                            text: workingText,
-                          );
-                          if (!mounted) return;
-                          setState(() {
-                            _type = workingType;
-                            _text = workingText;
-                          });
-                          if (!ctx.mounted) return;
-                          Navigator.pop(ctx);
-                        },
-                        child: const Text('Guardar'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancelar'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () async {
+                            if (workingText.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Agrega una frase antes de guardar.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            await repo.saveHomePhraseSelection(
+                              type: workingType,
+                              text: workingText,
+                            );
+                            if (!mounted) return;
+                            setState(() {
+                              _text = workingText;
+                            });
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('Guardar'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         );
       },
     );
@@ -774,13 +1093,20 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
   Future<String?> _showAddPhraseDialog(
     BuildContext context, {
     required String type,
+    String? initialText,
+    String? previousText,
   }) async {
-    final ctrl = TextEditingController();
+    final ctrl = TextEditingController(text: initialText ?? '');
+    final isEditing = previousText != null;
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(
-          type == 'emanation' ? 'Agregar emanación' : 'Agregar afirmación',
+          isEditing
+              ? (type == 'emanation' ? 'Editar emanación' : 'Editar afirmación')
+              : (type == 'emanation'
+                    ? 'Agregar emanación'
+                    : 'Agregar afirmación'),
         ),
         content: TextField(
           controller: ctrl,
@@ -801,7 +1127,28 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
               final text = ctrl.text.trim();
               if (text.isEmpty) return;
               final repo = ref.read(repositoryProvider);
-              await repo.addCustomHomePhrase(type: type, text: text);
+              late final bool saved;
+              if (isEditing) {
+                saved = await repo.updateCustomHomePhrase(
+                  type: type,
+                  previousText: previousText,
+                  nextText: text,
+                );
+              } else {
+                await repo.addCustomHomePhrase(type: type, text: text);
+                saved = true;
+              }
+              if (!saved) {
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Ya existe una afirmación igual o no se pudo editar.',
+                    ),
+                  ),
+                );
+                return;
+              }
               if (!ctx.mounted) return;
               Navigator.pop(ctx, text);
             },
@@ -810,6 +1157,58 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
         ],
       ),
     );
+  }
+
+  List<String> _optionsForType(SadhanaRepository repo, String type) {
+    final base = type == 'emanation' ? _emanationOptions : _affirmationOptions;
+    final custom = repo.getCustomHomePhrases(type: type);
+    return <String>[...base, ...custom];
+  }
+
+  String _initialPhrase(SadhanaRepository repo, String type) {
+    final options = _optionsForType(repo, type);
+    if (options.isEmpty) return '';
+    return options.first;
+  }
+
+  Future<void> _cleanupLegacyPhrases() async {
+    final repo = ref.read(repositoryProvider);
+    final legacy = <String>{
+      ..._legacyAffirmationOptions.map((e) => e.trim().toLowerCase()),
+      ..._legacyEmanationOptions.map((e) => e.trim().toLowerCase()),
+    };
+
+    final customAffirmations = repo.getCustomHomePhrases(type: 'affirmation');
+    final customEmanations = repo.getCustomHomePhrases(type: 'emanation');
+    final filteredAffirmations = customAffirmations
+        .where((item) => !legacy.contains(item.trim().toLowerCase()))
+        .toList(growable: false);
+    final filteredEmanations = customEmanations
+        .where((item) => !legacy.contains(item.trim().toLowerCase()))
+        .toList(growable: false);
+
+    if (filteredAffirmations.length != customAffirmations.length) {
+      await repo.saveCustomHomePhrases(
+        type: 'affirmation',
+        phrases: filteredAffirmations,
+      );
+    }
+    if (filteredEmanations.length != customEmanations.length) {
+      await repo.saveCustomHomePhrases(
+        type: 'emanation',
+        phrases: filteredEmanations,
+      );
+    }
+
+    final selected = repo.getHomePhraseSelection();
+    final selectedText = selected?.text.trim().toLowerCase();
+    if (selectedText != null && legacy.contains(selectedText)) {
+      await repo.clearHomePhraseSelection();
+      if (!mounted) return;
+      setState(() {
+        _text = null;
+      });
+    }
   }
 }
 
@@ -830,6 +1229,7 @@ class _DiaryTodayCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final sectionTitleSize = (theme.textTheme.titleSmall?.fontSize ?? 15) - 1.2;
 
     return Card(
       elevation: 0,
@@ -850,45 +1250,43 @@ class _DiaryTodayCard extends StatelessWidget {
                     style: theme.textTheme.titleSmall?.copyWith(
                       letterSpacing: 1.4,
                       fontWeight: FontWeight.w800,
+                      fontSize: sectionTitleSize,
                     ),
                   ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const DiaryPage()),
-                    );
-                  },
-                  icon: const Icon(Icons.menu_book_outlined, size: 16),
-                  label: const Text('Ver resumen'),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _LogroChip(
+            Row(
+              children: [
+                Expanded(
+                  child: _LogroChip(
                     icon: Icons.check_circle_outline,
                     label: '$taskCount práctica${taskCount == 1 ? '' : 's'}',
                     color: cs.primary,
+                    expand: true,
                   ),
-                  const SizedBox(width: 8),
-                  _LogroChip(
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _LogroChip(
                     icon: Icons.task_alt_outlined,
                     label:
                         '$extraTaskCount extra${extraTaskCount == 1 ? '' : 's'}',
                     color: cs.tertiary,
+                    expand: true,
                   ),
-                  const SizedBox(width: 8),
-                  _LogroChip(
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _LogroChip(
                     icon: Icons.edit_note_outlined,
                     label: '$noteCount nota${noteCount == 1 ? '' : 's'}',
                     color: cs.secondary,
+                    expand: true,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
@@ -902,27 +1300,40 @@ class _LogroChip extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.color,
+    this.expand = false,
   });
 
   final IconData icon;
   final String label;
   final Color color;
+  final bool expand;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
+      width: expand ? double.infinity : null,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
         children: [
           Icon(icon, size: 15, color: color),
           const SizedBox(width: 4),
-          Text(label, style: theme.textTheme.labelMedium),
+          if (expand)
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium,
+              ),
+            )
+          else
+            Text(label, style: theme.textTheme.labelMedium),
         ],
       ),
     );

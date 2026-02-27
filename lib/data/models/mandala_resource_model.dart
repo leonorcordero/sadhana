@@ -6,6 +6,7 @@ class MandalaResourceModel {
   const MandalaResourceModel({
     required this.id,
     required this.cycleId,
+    required this.folderId,
     required this.title,
     required this.type,
     required this.createdAt,
@@ -15,6 +16,7 @@ class MandalaResourceModel {
 
   final String id;
   final String cycleId;
+  final String folderId;
   final String title;
   final MandalaResourceType type;
   final String createdAt; // ISO 8601
@@ -23,6 +25,7 @@ class MandalaResourceModel {
 
   factory MandalaResourceModel.create({
     required String cycleId,
+    required String folderId,
     required String title,
     required MandalaResourceType type,
     String? filePath,
@@ -31,6 +34,7 @@ class MandalaResourceModel {
     return MandalaResourceModel(
       id: const Uuid().v4(),
       cycleId: cycleId,
+      folderId: folderId,
       title: title,
       type: type,
       createdAt: DateTime.now().toIso8601String(),
@@ -42,6 +46,7 @@ class MandalaResourceModel {
   MandalaResourceModel copyWith({
     String? id,
     String? cycleId,
+    String? folderId,
     String? title,
     MandalaResourceType? type,
     String? createdAt,
@@ -51,6 +56,7 @@ class MandalaResourceModel {
     return MandalaResourceModel(
       id: id ?? this.id,
       cycleId: cycleId ?? this.cycleId,
+      folderId: folderId ?? this.folderId,
       title: title ?? this.title,
       type: type ?? this.type,
       createdAt: createdAt ?? this.createdAt,
@@ -63,6 +69,7 @@ class MandalaResourceModel {
     return {
       'id': id,
       'cycleId': cycleId,
+      'folderId': folderId,
       'title': title,
       'type': type.name,
       'createdAt': createdAt,
@@ -80,6 +87,7 @@ class MandalaResourceModel {
     return MandalaResourceModel(
       id: map['id'] as String,
       cycleId: map['cycleId'] as String,
+      folderId: map['folderId'] as String? ?? '',
       title: map['title'] as String? ?? 'Recurso',
       type: type,
       createdAt: map['createdAt'] as String? ?? '',

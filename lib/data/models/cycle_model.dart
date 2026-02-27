@@ -13,6 +13,7 @@ class CycleModel {
     required this.streakMax,
     required this.isActive,
     this.archetype,
+    this.circle = 0,
   });
 
   factory CycleModel.create({
@@ -21,6 +22,7 @@ class CycleModel {
     required bool customDuration,
     required String sankalpa,
     String? archetype,
+    int circle = 0,
   }) {
     if (duration < 1) {
       throw ArgumentError.value(duration, 'duration', 'Debe ser mayor a 0');
@@ -37,6 +39,7 @@ class CycleModel {
       streakMax: 0,
       isActive: false,
       archetype: archetype,
+      circle: circle.clamp(0, 7),
     );
   }
 
@@ -53,6 +56,7 @@ class CycleModel {
 
   /// Clave del arquetipo mandala (nullable para compatibilidad con datos existentes).
   final String? archetype;
+  final int circle; // 0..7 (0 = sin círculo)
 
   double get progress =>
       duration == 0 ? 0 : (currentDay / duration).clamp(0, 1);
@@ -69,6 +73,7 @@ class CycleModel {
     int? streakMax,
     bool? isActive,
     String? archetype,
+    int? circle,
   }) {
     return CycleModel(
       id: id ?? this.id,
@@ -82,6 +87,7 @@ class CycleModel {
       streakMax: streakMax ?? this.streakMax,
       isActive: isActive ?? this.isActive,
       archetype: archetype ?? this.archetype,
+      circle: (circle ?? this.circle).clamp(0, 7),
     );
   }
 
@@ -98,6 +104,7 @@ class CycleModel {
       'streakMax': streakMax,
       'isActive': isActive,
       'archetype': archetype,
+      'circle': circle,
     };
   }
 
@@ -114,6 +121,7 @@ class CycleModel {
       streakMax: map['streakMax'] as int,
       isActive: map['isActive'] as bool,
       archetype: map['archetype'] as String?,
+      circle: ((map['circle'] as int?) ?? 0).clamp(0, 7),
     );
   }
 }

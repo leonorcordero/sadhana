@@ -16,6 +16,11 @@ class InMemoryDatasource extends LocalStorageDatasource {
   final Map<String, TaskModel> _tasks = {};
   final Map<String, DayLogModel> _logs = {};
   final Map<String, dynamic> _settings = {};
+  final List<Map<String, dynamic>> _externalEvents = [];
+  final Set<String> _externalHiddenEventIds = <String>{};
+  final Set<String> _externalHiddenGroupKeys = <String>{};
+  final Set<String> _externalHiddenTitleKeys = <String>{};
+  Map<String, dynamic> _externalCalendarConfig = {};
 
   @override
   Future<void> init() async {}
@@ -92,6 +97,59 @@ class InMemoryDatasource extends LocalStorageDatasource {
 
   @override
   Future<void> saveNotesRaw(List<Map<String, dynamic>> items) async {}
+
+  @override
+  List<Map<String, dynamic>> getExternalEventsRaw() =>
+      List.unmodifiable(_externalEvents);
+
+  @override
+  Future<void> saveExternalEventsRaw(List<Map<String, dynamic>> items) async {
+    _externalEvents
+      ..clear()
+      ..addAll(items);
+  }
+
+  @override
+  Set<String> getExternalHiddenEventIds() =>
+      Set<String>.from(_externalHiddenEventIds);
+
+  @override
+  Future<void> saveExternalHiddenEventIds(Set<String> ids) async {
+    _externalHiddenEventIds
+      ..clear()
+      ..addAll(ids);
+  }
+
+  @override
+  Set<String> getExternalHiddenGroupKeys() =>
+      Set<String>.from(_externalHiddenGroupKeys);
+
+  @override
+  Future<void> saveExternalHiddenGroupKeys(Set<String> keys) async {
+    _externalHiddenGroupKeys
+      ..clear()
+      ..addAll(keys);
+  }
+
+  @override
+  Set<String> getExternalHiddenTitleKeys() =>
+      Set<String>.from(_externalHiddenTitleKeys);
+
+  @override
+  Future<void> saveExternalHiddenTitleKeys(Set<String> keys) async {
+    _externalHiddenTitleKeys
+      ..clear()
+      ..addAll(keys);
+  }
+
+  @override
+  Map<String, dynamic> getExternalCalendarConfig() =>
+      Map<String, dynamic>.from(_externalCalendarConfig);
+
+  @override
+  Future<void> saveExternalCalendarConfig(Map<String, dynamic> config) async {
+    _externalCalendarConfig = Map<String, dynamic>.from(config);
+  }
 }
 
 class SilentNotificationService extends NotificationService {
@@ -102,6 +160,8 @@ class SilentNotificationService extends NotificationService {
   Future<void> scheduleDailyReminders({
     List<int> hours = const [9, 14, 20],
     bool enabled = true,
+    String contentType = 'focus',
+    String customText = '',
   }) async {}
 
   @override
@@ -109,9 +169,7 @@ class SilentNotificationService extends NotificationService {
 }
 
 void main() {
-  testWidgets('dashboard muestra sankalpa cuando hay ciclo activo', (
-    tester,
-  ) async {
+  testWidgets('dashboard muestra datos del ciclo activo', (tester) async {
     final datasource = InMemoryDatasource();
     final repository = SadhanaRepository(datasource);
 
@@ -139,7 +197,7 @@ void main() {
           ),
           dailyClosureServiceProvider.overrideWithValue(DailyClosureService()),
         ],
-        child: const MaterialApp(home: DashboardPage()),
+        child: const MaterialApp(home: Scaffold(body: DashboardPage())),
       ),
     );
 
@@ -147,11 +205,11 @@ void main() {
       tester.element(find.byType(DashboardPage)),
     );
     final controller = container.read(appControllerProvider.notifier);
-    controller.initialize();
+    await controller.initialize();
 
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.text('Ciclo 40'), findsWidgets);
-    expect(find.textContaining('Servir con presencia'), findsOneWidget);
+    expect(find.text('LOGROS DE HOY'), findsOneWidget);
+    expect(find.textContaining('AFIRMACIONES'), findsOneWidget);
   });
 }

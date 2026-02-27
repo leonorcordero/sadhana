@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/providers.dart';
+import 'package:sadhana/core/utils/responsive_utils.dart';
 import 'package:sadhana/data/models/cycle_model.dart';
+import 'package:sadhana/data/models/resource_folder_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
 import 'package:sadhana/features/cycles/domain/mandala_archetype.dart';
-import 'package:sadhana/features/resources/presentation/resources_page.dart';
+import 'package:sadhana/features/resources/presentation/resources_library_page.dart';
 
 // ── Página principal ──────────────────────────────────────────────────────────
 
@@ -14,15 +16,21 @@ class CyclesPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cycles = ref.watch(appControllerProvider.select((s) => s.cycles));
+    final repo = ref.read(repositoryProvider);
+    final spacingScale = ResponsiveUtils.spacingScale(context);
+    final isNarrow = ResponsiveUtils.isNarrowPhone(context);
+    final folderById = <String, ResourceFolderModel>{
+      for (final folder in repo.getResourceFolders()) folder.id: folder,
+    };
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 68,
+        toolbarHeight: isNarrow ? 60 : 68,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Mándalas'),
+            const Text('Mandalas y Tapasyas'),
             Text(
               'Tus ciclos de práctica',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -37,11 +45,16 @@ class CyclesPage extends ConsumerWidget {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        padding: EdgeInsets.fromLTRB(
+          16 * spacingScale,
+          20 * spacingScale,
+          16 * spacingScale,
+          32 * spacingScale,
+        ),
         children: [
           for (final cycle in cycles)
             Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: EdgeInsets.only(bottom: 12 * spacingScale),
               child: cycle.isActive
                   ? _ActiveMandalaCard(
                       cycle: cycle,
@@ -61,13 +74,10 @@ class CyclesPage extends ConsumerWidget {
                             .read(appControllerProvider.notifier)
                             .deleteCycle(cycle.id),
                       ),
-                      onResources: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ResourcesPage(
-                            cycleId: cycle.id,
-                            cycleName: cycle.name,
-                          ),
-                        ),
+                      onCircleResources: _buildCircleResourcesAction(
+                        context: context,
+                        cycle: cycle,
+                        folderById: folderById,
                       ),
                     )
                   : _InactiveMandalaCard(
@@ -88,37 +98,74 @@ class CyclesPage extends ConsumerWidget {
                             .read(appControllerProvider.notifier)
                             .deleteCycle(cycle.id),
                       ),
-                      onResources: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ResourcesPage(
-                            cycleId: cycle.id,
-                            cycleName: cycle.name,
-                          ),
-                        ),
+                      onCircleResources: _buildCircleResourcesAction(
+                        context: context,
+                        cycle: cycle,
+                        folderById: folderById,
                       ),
                     ),
             ),
         ],
       ),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 26),
-        child: FloatingActionButton(
-          onPressed: () => _showCreateSheet(context, ref),
-          child: const Icon(Icons.add),
+        padding: EdgeInsets.only(bottom: 74 * spacingScale),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            FloatingActionButton.extended(
+              heroTag: 'create_mandala_fab',
+              tooltip: 'Crear Mandala',
+              onPressed: () =>
+                  _showCreateSheet(context, ref, kind: _CreationKind.mandala),
+              icon: const Icon(Icons.add),
+              label: const Text('Mandala'),
+            ),
+            SizedBox(height: 10 * spacingScale),
+            FloatingActionButton.extended(
+              heroTag: 'create_tapasya_fab',
+              tooltip: 'Crear Tapasya',
+              onPressed: () =>
+                  _showCreateSheet(context, ref, kind: _CreationKind.tapasya),
+              icon: const Icon(Icons.add),
+              label: const Text('Tapasya'),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  VoidCallback? _buildCircleResourcesAction({
+    required BuildContext context,
+    required CycleModel cycle,
+    required Map<String, ResourceFolderModel> folderById,
+  }) {
+    final circle = _circleForArchetype(cycle.archetype);
+    if (circle == null) return null;
+    final folderId = 'recursos-circulos-circle-$circle';
+    final folder = folderById[folderId];
+    if (folder == null) return null;
+    return () {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ResourceFolderPage(folder: folder)),
+      );
+    };
+  }
+
   // ── Creación: bottom sheet ────────────────────────────────────────────────
 
-  Future<void> _showCreateSheet(BuildContext context, WidgetRef ref) async {
+  Future<void> _showCreateSheet(
+    BuildContext context,
+    WidgetRef ref, {
+    _CreationKind kind = _CreationKind.mandala,
+  }) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _CreateCycleSheet(ref: ref),
+      builder: (_) => _CreateCycleSheet(ref: ref, kind: kind),
     );
   }
 
@@ -146,7 +193,14 @@ class CyclesPage extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await onConfirm();
+      try {
+        await onConfirm();
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo completar: $e')));
+      }
     }
   }
 }
@@ -158,13 +212,13 @@ class _ActiveMandalaCard extends ConsumerWidget {
     required this.cycle,
     required this.onRestart,
     required this.onDelete,
-    required this.onResources,
+    this.onCircleResources,
   });
 
   final CycleModel cycle;
   final VoidCallback onRestart;
   final VoidCallback onDelete;
-  final VoidCallback onResources;
+  final VoidCallback? onCircleResources;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -274,7 +328,7 @@ class _ActiveMandalaCard extends ConsumerWidget {
               children: [
                 // Sankalpa
                 Text(
-                  cycle.sankalpa,
+                  'Sankalpa: ${cycle.sankalpa}',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontStyle: FontStyle.italic,
                     color: cs.onSurfaceVariant,
@@ -361,23 +415,57 @@ class _ActiveMandalaCard extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton.icon(
-                      onPressed: onResources,
-                      icon: const Icon(Icons.folder_outlined, size: 16),
-                      label: const Text('Recursos'),
-                    ),
-                    const SizedBox(width: 4),
-                    TextButton.icon(
-                      onPressed: onRestart,
-                      icon: const Icon(Icons.replay, size: 16),
-                      label: const Text('Reiniciar'),
-                    ),
-                    const SizedBox(width: 4),
-                    TextButton.icon(
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline, size: 16),
-                      label: const Text('Eliminar'),
-                      style: TextButton.styleFrom(foregroundColor: cs.error),
+                    if (onCircleResources != null) ...[
+                      TextButton.icon(
+                        onPressed: onCircleResources,
+                        icon: const Icon(Icons.hub_outlined, size: 16),
+                        label: const Text('Recursos círculo'),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    PopupMenuButton<_CycleCardAction>(
+                      tooltip: 'Acciones',
+                      onSelected: (action) {
+                        switch (action) {
+                          case _CycleCardAction.restart:
+                            onRestart();
+                            break;
+                          case _CycleCardAction.delete:
+                            onDelete();
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: _CycleCardAction.restart,
+                          child: Text('Reiniciar'),
+                        ),
+                        PopupMenuItem(
+                          value: _CycleCardAction.delete,
+                          child: Text(
+                            'Eliminar',
+                            style: TextStyle(color: cs.error),
+                          ),
+                        ),
+                      ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.more_horiz,
+                              size: 18,
+                              color: cs.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            const Text('Acciones'),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -397,13 +485,13 @@ class _InactiveMandalaCard extends StatelessWidget {
     required this.cycle,
     required this.onRestart,
     required this.onDelete,
-    required this.onResources,
+    this.onCircleResources,
   });
 
   final CycleModel cycle;
   final VoidCallback onRestart;
   final VoidCallback onDelete;
-  final VoidCallback onResources;
+  final VoidCallback? onCircleResources;
 
   @override
   Widget build(BuildContext context) {
@@ -461,7 +549,7 @@ class _InactiveMandalaCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            '${cycle.duration} días · ${cycle.sankalpa}',
+                            '${cycle.duration} días · Sankalpa: ${cycle.sankalpa}',
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: cs.onSurfaceVariant,
                             ),
@@ -482,24 +570,56 @@ class _InactiveMandalaCard extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.folder_outlined),
-                          tooltip: 'Recursos',
-                          onPressed: onResources,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.replay),
-                          tooltip: 'Reiniciar',
-                          onPressed: onRestart,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'Eliminar',
-                          onPressed: onDelete,
-                          visualDensity: VisualDensity.compact,
-                          color: cs.error,
+                        if (onCircleResources != null)
+                          IconButton(
+                            icon: const Icon(Icons.hub_outlined),
+                            tooltip: 'Recursos del círculo',
+                            onPressed: onCircleResources,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        PopupMenuButton<_CycleCardAction>(
+                          tooltip: 'Acciones',
+                          onSelected: (action) {
+                            switch (action) {
+                              case _CycleCardAction.restart:
+                                onRestart();
+                                break;
+                              case _CycleCardAction.delete:
+                                onDelete();
+                                break;
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: _CycleCardAction.restart,
+                              child: Text('Reiniciar'),
+                            ),
+                            PopupMenuItem(
+                              value: _CycleCardAction.delete,
+                              child: Text(
+                                'Eliminar',
+                                style: TextStyle(color: cs.error),
+                              ),
+                            ),
+                          ],
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.more_horiz,
+                                  size: 18,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 4),
+                                const Text('Acciones'),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -511,6 +631,27 @@ class _InactiveMandalaCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+int? _circleForArchetype(String? archetypeKey) {
+  switch (archetypeKey) {
+    case 'fuego':
+      return 1;
+    case 'luz':
+      return 2;
+    case 'cosmico':
+      return 3;
+    case 'estelar':
+      return 4;
+    case 'madre':
+      return 5;
+    case 'padre':
+      return 6;
+    case 'fuente':
+      return 7;
+    default:
+      return null;
   }
 }
 
@@ -637,9 +778,17 @@ class _StatChip extends StatelessWidget {
 
 // ── Bottom sheet de creación ──────────────────────────────────────────────────
 
+enum _CreationKind { mandala, tapasya }
+
+enum _CycleCardAction { restart, delete }
+
 class _CreateCycleSheet extends StatefulWidget {
-  const _CreateCycleSheet({required this.ref});
+  const _CreateCycleSheet({
+    required this.ref,
+    this.kind = _CreationKind.mandala,
+  });
   final WidgetRef ref;
+  final _CreationKind kind;
 
   @override
   State<_CreateCycleSheet> createState() => _CreateCycleSheetState();
@@ -661,6 +810,12 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
   String? _durationError;
 
   static const _presetDurations = [7, 14, 21, 42];
+
+  String get _entityLabel =>
+      widget.kind == _CreationKind.tapasya ? 'tapasya' : 'mandala';
+
+  String get _entityLabelCapitalized =>
+      widget.kind == _CreationKind.tapasya ? 'Tapasya' : 'Mandala';
 
   @override
   void initState() {
@@ -718,7 +873,10 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
             child: Row(
               children: [
-                Text('Nuevo mandala', style: theme.textTheme.headlineSmall),
+                Text(
+                  'Nuevo $_entityLabel',
+                  style: theme.textTheme.headlineSmall,
+                ),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -743,6 +901,9 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
                   // ── Arquetipo ─────────────────────────────────────────
                   const SizedBox(height: 4),
                   _ArchetypeGrid(
+                    options: widget.kind == _CreationKind.tapasya
+                        ? MandalaArchetype.tapasyaOptions
+                        : MandalaArchetype.mandalaOptions,
                     selected: _selectedArchetype,
                     onSelected: (a) => setState(() => _selectedArchetype = a),
                   ),
@@ -806,52 +967,59 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  ..._defaultTaskTitles.map(
-                    (title) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-                        decoration: BoxDecoration(
-                          color: cs.surfaceContainerHigh,
-                          border: Border.all(color: cs.outlineVariant),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          children: [
-                            CheckboxListTile(
-                              value: _defaultTaskSelected[title] ?? false,
-                              onChanged: (value) {
-                                setState(() {
-                                  _defaultTaskSelected[title] = value ?? false;
-                                });
-                              },
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: cs.primary,
-                              checkColor: cs.onPrimary,
-                              controlAffinity: ListTileControlAffinity.leading,
-                              title: Text(
-                                title,
-                                style: theme.textTheme.bodyLarge?.copyWith(
-                                  color: const Color(0xFF1D2A1D),
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 17,
+                  if (widget.kind == _CreationKind.mandala)
+                    ..._defaultTaskTitles.map(
+                      (title) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHigh,
+                            border: Border.all(color: cs.outlineVariant),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            children: [
+                              CheckboxListTile(
+                                value: _defaultTaskSelected[title] ?? false,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _defaultTaskSelected[title] =
+                                        value ?? false;
+                                  });
+                                },
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                activeColor: cs.primary,
+                                checkColor: cs.onPrimary,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                title: Text(
+                                  title,
+                                  style: theme.textTheme.bodyLarge?.copyWith(
+                                    color: const Color(0xFF1D2A1D),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize:
+                                        (theme.textTheme.bodyLarge?.fontSize ??
+                                            16) -
+                                        0.8,
+                                  ),
                                 ),
                               ),
-                            ),
-                            TextField(
-                              controller: _defaultTaskCommentControllers[title],
-                              enabled: _defaultTaskSelected[title] ?? false,
-                              decoration: const InputDecoration(
-                                labelText: 'Comentario',
-                                hintText: 'Opcional',
+                              TextField(
+                                controller:
+                                    _defaultTaskCommentControllers[title],
+                                enabled: _defaultTaskSelected[title] ?? false,
+                                decoration: const InputDecoration(
+                                  labelText: 'Comentario',
+                                  hintText: 'Opcional',
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
                   const SizedBox(height: 4),
                   for (int i = 0; i < _pendingTasks.length; i++)
                     ListTile(
@@ -890,7 +1058,7 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
                     width: double.infinity,
                     child: FilledButton(
                       onPressed: _submit,
-                      child: const Text('Crear mandala'),
+                      child: Text('Crear $_entityLabel'),
                     ),
                   ),
                 ],
@@ -929,16 +1097,18 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
               ? 'Otro'
               : _customArchetypeController.text.trim())
         : (_selectedArchetype?.label ?? 'Libre');
-    final name = 'Mandala $generatedTypeLabel';
+    final name = '$_entityLabelCapitalized $generatedTypeLabel';
 
     final defaultTasks = <({String title, String? description})>[];
-    for (final title in _defaultTaskTitles) {
-      if (_defaultTaskSelected[title] ?? false) {
-        final comment = _defaultTaskCommentControllers[title]?.text.trim();
-        defaultTasks.add((
-          title: title,
-          description: (comment == null || comment.isEmpty) ? null : comment,
-        ));
+    if (widget.kind == _CreationKind.mandala) {
+      for (final title in _defaultTaskTitles) {
+        if (_defaultTaskSelected[title] ?? false) {
+          final comment = _defaultTaskCommentControllers[title]?.text.trim();
+          defaultTasks.add((
+            title: title,
+            description: (comment == null || comment.isEmpty) ? null : comment,
+          ));
+        }
       }
     }
 
@@ -950,6 +1120,7 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
           customDuration: _showCustomDuration,
           sankalpa: sankalpa,
           archetype: archetypeKey,
+          selectedSavedAudioIds: const [],
           tasks: List.unmodifiable([...defaultTasks, ..._pendingTasks]),
         );
     Navigator.pop(context);
@@ -1027,8 +1198,13 @@ class _SectionLabel extends StatelessWidget {
 // ── Grid de arquetipos ────────────────────────────────────────────────────────
 
 class _ArchetypeGrid extends StatelessWidget {
-  const _ArchetypeGrid({required this.selected, required this.onSelected});
+  const _ArchetypeGrid({
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
 
+  final List<MandalaArchetype> options;
   final MandalaArchetype? selected;
   final void Function(MandalaArchetype) onSelected;
 
@@ -1043,9 +1219,9 @@ class _ArchetypeGrid extends StatelessWidget {
         mainAxisSpacing: 2,
         childAspectRatio: 1,
       ),
-      itemCount: MandalaArchetype.all.length,
+      itemCount: options.length,
       itemBuilder: (context, index) {
-        final archetype = MandalaArchetype.all[index];
+        final archetype = options[index];
         return _ArchetypeCard(
           archetype: archetype,
           isSelected: selected?.key == archetype.key,
@@ -1207,6 +1383,16 @@ Future<void> showCreateCycleSheet(BuildContext context, WidgetRef ref) {
     useSafeArea: true,
     backgroundColor: Colors.transparent,
     builder: (_) => _CreateCycleSheet(ref: ref),
+  );
+}
+
+Future<void> showCreateTapasyaSheet(BuildContext context, WidgetRef ref) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _CreateCycleSheet(ref: ref, kind: _CreationKind.tapasya),
   );
 }
 

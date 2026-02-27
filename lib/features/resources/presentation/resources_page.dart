@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sadhana/core/providers.dart';
 import 'package:sadhana/data/models/mandala_resource_model.dart';
+import 'package:sadhana/features/resources/application/resources_audio_controller.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 class ResourcesPage extends ConsumerStatefulWidget {
@@ -211,6 +211,7 @@ class _ResourcesPageState extends ConsumerState<ResourcesPage> {
     await repo.saveMandalaResource(
       MandalaResourceModel.create(
         cycleId: widget.cycleId,
+        folderId: widget.cycleId,
         title: title,
         type: MandalaResourceType.text,
         inlineText: content,
@@ -266,6 +267,7 @@ class _ResourcesPageState extends ConsumerState<ResourcesPage> {
     await repo.saveMandalaResource(
       MandalaResourceModel.create(
         cycleId: widget.cycleId,
+        folderId: widget.cycleId,
         title: title.isEmpty ? 'Recurso' : title,
         type: type,
         filePath: destPath,
@@ -319,19 +321,18 @@ class _ResourcesPageState extends ConsumerState<ResourcesPage> {
   }
 }
 
-class ResourceViewerPage extends StatefulWidget {
+class ResourceViewerPage extends ConsumerStatefulWidget {
   const ResourceViewerPage({required this.resource, super.key});
 
   final MandalaResourceModel resource;
 
   @override
-  State<ResourceViewerPage> createState() => _ResourceViewerPageState();
+  ConsumerState<ResourceViewerPage> createState() => _ResourceViewerPageState();
 }
 
-class _ResourceViewerPageState extends State<ResourceViewerPage> {
+class _ResourceViewerPageState extends ConsumerState<ResourceViewerPage> {
   String? _textContent;
   String? _error;
-  AudioPlayer? _player;
 
   @override
   void initState() {
@@ -357,28 +358,10 @@ class _ResourceViewerPageState extends State<ResourceViewerPage> {
         setState(() {});
         return;
       }
-
-      if (widget.resource.type == MandalaResourceType.audio) {
-        final path = widget.resource.filePath;
-        if (path == null) {
-          _error = 'No se encontró el audio.';
-          setState(() {});
-          return;
-        }
-        _player = AudioPlayer();
-        await _player!.setFilePath(path);
-        setState(() {});
-      }
     } catch (e) {
       _error = e.toString();
       setState(() {});
     }
-  }
-
-  @override
-  void dispose() {
-    _player?.dispose();
-    super.dispose();
   }
 
   @override
@@ -415,7 +398,7 @@ class _ResourceViewerPageState extends State<ResourceViewerPage> {
         if (path == null) return const Center(child: Text('PDF no disponible'));
         return SfPdfViewer.file(File(path));
       case MandalaResourceType.audio:
-        return _AudioPlayerView(player: _player);
+        return _SharedAudioPlayerView(resource: r);
       case MandalaResourceType.other:
         final path = r.filePath;
         return Center(
@@ -427,63 +410,188 @@ class _ResourceViewerPageState extends State<ResourceViewerPage> {
   }
 }
 
-class _AudioPlayerView extends StatelessWidget {
-  const _AudioPlayerView({required this.player});
+class _SharedAudioPlayerView extends ConsumerStatefulWidget {
+  const _SharedAudioPlayerView({required this.resource});
 
-  final AudioPlayer? player;
+  final MandalaResourceModel resource;
+
+  @override
+  ConsumerState<_SharedAudioPlayerView> createState() =>
+      _SharedAudioPlayerViewState();
+}
+
+class _SharedAudioPlayerViewState
+    extends ConsumerState<_SharedAudioPlayerView> {
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_prepareAudio);
+  }
+
+  Future<void> _prepareAudio() async {
+    final path = widget.resource.filePath;
+    if (path == null || path.isEmpty) {
+      setState(() => _error = 'No se encontró el audio.');
+      return;
+    }
+    try {
+      final controller = ref.read(resourcesAudioControllerProvider);
+      await controller.ensureLoaded(
+        resourceId: widget.resource.id,
+        title: widget.resource.title,
+        filePath: path,
+      );
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (player == null) {
+    if (_error != null) {
+      return Center(child: Text(_error!));
+    }
+    final controller = ref.read(resourcesAudioControllerProvider);
+    final ready =
+        controller.currentState.activeResourceId == widget.resource.id;
+    if (!ready) {
       return const Center(child: CircularProgressIndicator());
     }
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        StreamBuilder<PlayerState>(
-          stream: player!.playerStateStream,
-          builder: (context, snapshot) {
-            final state = snapshot.data;
-            final playing = state?.playing ?? false;
-            return IconButton.filled(
-              iconSize: 42,
-              onPressed: () async {
-                if (playing) {
-                  await player!.pause();
-                } else {
-                  await player!.play();
-                }
-              },
-              icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-            );
-          },
-        ),
-        const SizedBox(height: 14),
-        StreamBuilder<Duration>(
-          stream: player!.positionStream,
-          builder: (context, posSnapshot) {
-            final pos = posSnapshot.data ?? Duration.zero;
-            final total = player!.duration ?? Duration.zero;
-            final maxMs = total.inMilliseconds.toDouble();
-            final value = pos.inMilliseconds
-                .toDouble()
-                .clamp(0, maxMs == 0 ? 1 : maxMs)
-                .toDouble();
-            return Column(
+    return StreamBuilder(
+      stream: controller.stateStream,
+      initialData: controller.currentState,
+      builder: (context, snapshot) {
+        final state = snapshot.data ?? controller.currentState;
+        final playing =
+            state.activeResourceId == widget.resource.id && state.isPlaying;
+        final pos = state.activeResourceId == widget.resource.id
+            ? state.position
+            : Duration.zero;
+        final total = state.activeResourceId == widget.resource.id
+            ? (state.duration ?? Duration.zero)
+            : Duration.zero;
+        final maxMs = total.inMilliseconds.toDouble();
+        final value = pos.inMilliseconds
+            .toDouble()
+            .clamp(0, maxMs == 0 ? 1 : maxMs)
+            .toDouble();
+
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Slider(
-                  value: value,
-                  min: 0,
-                  max: maxMs == 0 ? 1 : maxMs,
-                  onChanged: (v) =>
-                      player!.seek(Duration(milliseconds: v.round())),
+                IconButton(
+                  tooltip: 'Retroceder 10s',
+                  onPressed: () =>
+                      controller.seekRelative(const Duration(seconds: -10)),
+                  icon: const Icon(Icons.replay_10),
                 ),
-                Text('${_fmt(pos)} / ${_fmt(total)}'),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  iconSize: 42,
+                  onPressed: controller.togglePlayPause,
+                  icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Avanzar 10s',
+                  onPressed: () =>
+                      controller.seekRelative(const Duration(seconds: 10)),
+                  icon: const Icon(Icons.forward_10),
+                ),
               ],
-            );
-          },
-        ),
-      ],
+            ),
+            const SizedBox(height: 12),
+            Slider(
+              value: value,
+              min: 0,
+              max: maxMs == 0 ? 1 : maxMs,
+              onChanged: (v) =>
+                  controller.seek(Duration(milliseconds: v.round())),
+            ),
+            Text('${_fmt(pos)} / ${_fmt(total)}'),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: controller.restart,
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: const Text('Reiniciar'),
+                ),
+                const SizedBox(width: 10),
+                PopupMenuButton<double>(
+                  tooltip: 'Velocidad',
+                  onSelected: controller.setSpeed,
+                  itemBuilder: (ctx) => const [
+                    PopupMenuItem(value: 0.75, child: Text('0.75x')),
+                    PopupMenuItem(value: 1.0, child: Text('1.0x')),
+                    PopupMenuItem(value: 1.25, child: Text('1.25x')),
+                    PopupMenuItem(value: 1.5, child: Text('1.5x')),
+                    PopupMenuItem(value: 2.0, child: Text('2.0x')),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.speed, size: 18),
+                        const SizedBox(width: 6),
+                        Text('Velocidad ${state.speed.toStringAsFixed(2)}x'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                _RepeatModeChip(
+                  selected: state.repeatMode == ResourcesAudioRepeatMode.none,
+                  icon: Icons.repeat,
+                  label: 'Sin repetir',
+                  onTap: () =>
+                      controller.setRepeatMode(ResourcesAudioRepeatMode.none),
+                ),
+                _RepeatModeChip(
+                  selected: state.repeatMode == ResourcesAudioRepeatMode.once,
+                  icon: Icons.repeat_one,
+                  label: 'Repetir 1',
+                  onTap: () =>
+                      controller.setRepeatMode(ResourcesAudioRepeatMode.once),
+                ),
+                _RepeatModeChip(
+                  selected:
+                      state.repeatMode == ResourcesAudioRepeatMode.infinite,
+                  icon: Icons.loop,
+                  label: 'Infinito',
+                  onTap: () => controller.setRepeatMode(
+                    ResourcesAudioRepeatMode.infinite,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -491,5 +599,50 @@ class _AudioPlayerView extends StatelessWidget {
     final m = d.inMinutes.toString().padLeft(2, '0');
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
     return '$m:$s';
+  }
+}
+
+class _RepeatModeChip extends StatelessWidget {
+  const _RepeatModeChip({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Ink(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? cs.primary.withValues(alpha: 0.14) : cs.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: selected ? cs.primary : cs.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: selected ? cs.primary : cs.onSurface),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: selected ? cs.primary : cs.onSurface,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

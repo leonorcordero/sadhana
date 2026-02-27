@@ -13,6 +13,8 @@ import 'package:sadhana/data/models/diary_entry_model.dart';
 import 'package:sadhana/data/models/mandala_resource_model.dart';
 import 'package:sadhana/data/models/note_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
+import 'package:sadhana/data/models/resource_folder_model.dart';
+import 'package:sadhana/data/models/wednesday_affirmation_model.dart';
 import 'package:sadhana/features/streaks/application/streak_calculator.dart';
 
 class SadhanaRepository {
@@ -27,6 +29,16 @@ class SadhanaRepository {
   static const _externalCalendarConnectedKey = 'connected';
   static const _externalCalendarSourceUrlKey = 'sourceUrl';
   static const _externalCalendarLastSyncAtKey = 'lastSyncAt';
+  static const _resourceFoldersKey = 'resource_folders';
+  static const _resourceFoldersOrderKey = 'resource_folders_order';
+  static const _resourceItemsOrderByFolderKey =
+      'resource_items_order_by_folder';
+  static const _wednesdayAffirmationKey = 'wednesday_affirmation';
+  static const _moonNightWarningTextKey = 'moon_night_warning_text';
+  static const _moonDayOnlyTextKey = 'moon_day_only_text';
+  static const defaultMoonNightWarningText =
+      'No se recomienda hacer sadhana PM';
+  static const defaultMoonDayOnlyText = 'Sadhana solo de día.';
 
   List<CycleModel> getCycles() {
     final cycles = _datasource.getCycles();
@@ -811,6 +823,29 @@ class SadhanaRepository {
     return result;
   }
 
+  ({int daysWithPractice, int totalPractices}) getPracticeWindowStats({
+    required int days,
+    DateTime? untilDate,
+  }) {
+    final end = untilDate ?? DateTime.now();
+    final normalizedEnd = DateTime(end.year, end.month, end.day);
+    var daysWithPractice = 0;
+    var totalPractices = 0;
+
+    for (var offset = 0; offset < days; offset++) {
+      final day = normalizedEnd.subtract(Duration(days: offset));
+      final completedMandalaTasks = getCompletedMandalaTasksForDay(day).length;
+      final extraTasks = getDiaryEntry(day).extraTasks.length;
+      final totalForDay = completedMandalaTasks + extraTasks;
+      if (totalForDay > 0) {
+        daysWithPractice++;
+        totalPractices += totalForDay;
+      }
+    }
+
+    return (daysWithPractice: daysWithPractice, totalPractices: totalPractices);
+  }
+
   Future<String> exportBackupJson() async {
     final map = await _datasource.exportAllAsJsonMap();
     return const JsonEncoder.withIndent('  ').convert(map);
@@ -873,6 +908,150 @@ class SadhanaRepository {
     await _datasource.saveSetting(_phraseKeyForType(type), next);
   }
 
+  Future<void> removeCustomHomePhrase({
+    required String type,
+    required String text,
+  }) async {
+    final normalized = text.trim().toLowerCase();
+    if (normalized.isEmpty) return;
+    final existing = getCustomHomePhrases(type: type);
+    final next = existing
+        .where((item) => item.trim().toLowerCase() != normalized)
+        .toList(growable: false);
+    await _datasource.saveSetting(_phraseKeyForType(type), next);
+  }
+
+  Future<bool> updateCustomHomePhrase({
+    required String type,
+    required String previousText,
+    required String nextText,
+  }) async {
+    final prevNormalized = previousText.trim();
+    final nextNormalized = nextText.trim();
+    if (prevNormalized.isEmpty || nextNormalized.isEmpty) return false;
+
+    final existing = getCustomHomePhrases(type: type).toList(growable: true);
+    final previousIndex = existing.indexWhere(
+      (item) => item.toLowerCase() == prevNormalized.toLowerCase(),
+    );
+    if (previousIndex < 0) return false;
+
+    final duplicateIndex = existing.indexWhere(
+      (item) => item.toLowerCase() == nextNormalized.toLowerCase(),
+    );
+    if (duplicateIndex >= 0 && duplicateIndex != previousIndex) return false;
+
+    existing[previousIndex] = nextNormalized;
+    await _datasource.saveSetting(
+      _phraseKeyForType(type),
+      existing.toList(growable: false),
+    );
+    return true;
+  }
+
+  Future<void> saveCustomHomePhrases({
+    required String type,
+    required List<String> phrases,
+  }) async {
+    final normalized = phrases
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    await _datasource.saveSetting(_phraseKeyForType(type), normalized);
+  }
+
+  Future<void> clearHomePhraseSelection() async {
+    await _datasource.deleteSetting(_homePhraseTypeKey);
+    await _datasource.deleteSetting(_homePhraseTextKey);
+  }
+
+  ({String nightWarningText, String dayOnlyText}) getMoonCardTexts() {
+    final savedNight =
+        (_datasource.getSetting(_moonNightWarningTextKey) as String?)?.trim();
+    final savedDay = (_datasource.getSetting(_moonDayOnlyTextKey) as String?)
+        ?.trim();
+
+    return (
+      nightWarningText: (savedNight == null || savedNight.isEmpty)
+          ? defaultMoonNightWarningText
+          : savedNight,
+      dayOnlyText: (savedDay == null || savedDay.isEmpty)
+          ? defaultMoonDayOnlyText
+          : savedDay,
+    );
+  }
+
+  Future<void> saveMoonCardTexts({
+    required String nightWarningText,
+    required String dayOnlyText,
+  }) async {
+    final night = nightWarningText.trim().isEmpty
+        ? defaultMoonNightWarningText
+        : nightWarningText.trim();
+    final day = dayOnlyText.trim().isEmpty
+        ? defaultMoonDayOnlyText
+        : dayOnlyText.trim();
+    await _datasource.saveSetting(_moonNightWarningTextKey, night);
+    await _datasource.saveSetting(_moonDayOnlyTextKey, day);
+  }
+
+  WednesdayAffirmationModel? getWednesdayAffirmation() {
+    final list = getWednesdayAffirmations();
+    if (list.isEmpty) return null;
+    return list.first;
+  }
+
+  List<WednesdayAffirmationModel> getWednesdayAffirmations() {
+    final raw = _datasource.getSetting(_wednesdayAffirmationKey);
+    final items = <WednesdayAffirmationModel>[];
+
+    if (raw is List) {
+      for (final entry in raw) {
+        if (entry is! Map) continue;
+        final model = WednesdayAffirmationModel.fromMap(
+          Map<String, dynamic>.from(entry),
+        );
+        if (model.meditationDateKey.trim().isEmpty) continue;
+        items.add(model);
+      }
+    } else if (raw is Map) {
+      final model = WednesdayAffirmationModel.fromMap(
+        Map<String, dynamic>.from(raw),
+      );
+      if (model.meditationDateKey.trim().isNotEmpty) {
+        items.add(model);
+      }
+    }
+
+    items.sort((a, b) => b.meditationDateKey.compareTo(a.meditationDateKey));
+    return items;
+  }
+
+  Future<void> saveWednesdayAffirmation(WednesdayAffirmationModel value) async {
+    final all = getWednesdayAffirmations().toList(growable: true);
+    all.insert(0, value);
+    await saveWednesdayAffirmations(all);
+  }
+
+  Future<void> saveWednesdayAffirmations(
+    List<WednesdayAffirmationModel> values,
+  ) async {
+    await _datasource.saveSetting(
+      _wednesdayAffirmationKey,
+      values.map((item) => item.toMap()).toList(growable: false),
+    );
+  }
+
+  Future<void> removeWednesdayAffirmation({required String updatedAt}) async {
+    final normalized = updatedAt.trim();
+    if (normalized.isEmpty) return;
+    final next = getWednesdayAffirmations()
+        .where((item) => item.updatedAt.trim() != normalized)
+        .toList(growable: false);
+    await saveWednesdayAffirmations(next);
+  }
+
   String _phraseKeyForType(String type) {
     return type == 'emanation' ? _customEmanationsKey : _customAffirmationsKey;
   }
@@ -885,7 +1064,12 @@ class SadhanaRepository {
 
   List<NoteModel> getNotes() {
     return _datasource.getNotesRaw().map(NoteModel.fromMap).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      ..sort((a, b) {
+        if (a.isPinned != b.isPinned) {
+          return a.isPinned ? -1 : 1;
+        }
+        return b.createdAt.compareTo(a.createdAt);
+      });
   }
 
   Future<void> saveNote(NoteModel note) async {
@@ -913,7 +1097,7 @@ class SadhanaRepository {
     );
   }
 
-  // ── Recursos por mándala ────────────────────────────────────────────────
+  // ── Recursos por mandala ────────────────────────────────────────────────
 
   List<MandalaResourceModel> getMandalaResources({String? cycleId}) {
     final all = _datasource
@@ -927,12 +1111,30 @@ class SadhanaRepository {
     return filtered;
   }
 
+  List<MandalaResourceModel> getMandalaResourcesForFolderOrdered(
+    String folderId,
+  ) {
+    final items = getMandalaResources()
+        .where((item) => item.folderId == folderId)
+        .toList(growable: false);
+    final order =
+        _getResourceItemsOrderByFolder()[folderId] ?? const <String>[];
+    return _applyManualOrder(
+      items: items,
+      idOf: (item) => item.id,
+      order: order,
+      fallbackCompare: (a, b) => b.createdAt.compareTo(a.createdAt),
+    );
+  }
+
   Future<void> saveMandalaResource(MandalaResourceModel resource) async {
     final all = getMandalaResources();
     final next = <MandalaResourceModel>[];
     var found = false;
+    String? previousFolderId;
     for (final item in all) {
       if (item.id == resource.id) {
+        previousFolderId = item.folderId;
         next.add(resource);
         found = true;
       } else {
@@ -943,15 +1145,328 @@ class SadhanaRepository {
     await _datasource.saveMandalaResourcesRaw(
       next.map((r) => r.toMap()).toList(growable: false),
     );
+    await _syncResourceItemOrderOnSave(
+      saved: resource,
+      previousFolderId: previousFolderId,
+      isNew: !found,
+    );
   }
 
   Future<void> deleteMandalaResource(String resourceId) async {
-    final next = getMandalaResources()
-        .where((r) => r.id != resourceId)
-        .toList();
+    final all = getMandalaResources();
+    String? removedFolderId;
+    final next = <MandalaResourceModel>[];
+    for (final resource in all) {
+      if (resource.id == resourceId) {
+        removedFolderId = resource.folderId;
+        continue;
+      }
+      next.add(resource);
+    }
     await _datasource.saveMandalaResourcesRaw(
       next.map((r) => r.toMap()).toList(growable: false),
     );
+    if (removedFolderId != null) {
+      final map = _getResourceItemsOrderByFolder();
+      final list = List<String>.from(map[removedFolderId] ?? const <String>[]);
+      final changed = list.remove(resourceId);
+      if (changed) {
+        map[removedFolderId] = list;
+        await _saveResourceItemsOrderByFolder(map);
+      }
+    }
+  }
+
+  List<ResourceFolderModel> getResourceFolders() {
+    final raw = _datasource.getSetting(_resourceFoldersKey) as List?;
+    if (raw == null) return <ResourceFolderModel>[];
+    final folders = raw
+        .whereType<Map>()
+        .map(
+          (item) =>
+              ResourceFolderModel.fromMap(Map<String, dynamic>.from(item)),
+        )
+        .toList();
+    folders.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return _applyManualOrder(
+      items: folders,
+      idOf: (folder) => folder.id,
+      order: _getResourceFoldersOrderIds(),
+      fallbackCompare: (a, b) => a.createdAt.compareTo(b.createdAt),
+    );
+  }
+
+  Future<ResourceFolderModel> createResourceFolder({
+    required String name,
+    required int circle,
+    String? parentId,
+  }) async {
+    final existingFolders = getResourceFolders();
+    final normalizedParent = _resolveParentId(
+      parentId: parentId,
+      allFolders: existingFolders,
+      currentFolderId: null,
+    );
+    final folder = ResourceFolderModel.create(
+      name: name,
+      circle: circle,
+      parentId: normalizedParent,
+    );
+    final all = existingFolders..add(folder);
+    await _saveResourceFolders(all);
+    await _appendResourceFolderOrder(folder.id);
+    return folder;
+  }
+
+  Future<void> saveResourceFolder(ResourceFolderModel folder) async {
+    final all = getResourceFolders();
+    final sanitized = folder.copyWith(
+      parentId: _resolveParentId(
+        parentId: folder.parentId,
+        allFolders: all,
+        currentFolderId: folder.id,
+      ),
+    );
+    final next = <ResourceFolderModel>[];
+    var found = false;
+    for (final item in all) {
+      if (item.id == folder.id) {
+        next.add(sanitized);
+        found = true;
+      } else {
+        next.add(item);
+      }
+    }
+    if (!found) next.add(sanitized);
+    await _saveResourceFolders(next);
+  }
+
+  Future<void> deleteResourceFolder(String folderId) async {
+    final allFolders = getResourceFolders();
+    final descendants = _collectDescendantFolderIds(
+      allFolders,
+      rootFolderId: folderId,
+    );
+    final idsToDelete = <String>{folderId, ...descendants};
+
+    final folders = allFolders
+        .where((f) => !idsToDelete.contains(f.id))
+        .toList(growable: false);
+    await _saveResourceFolders(folders);
+    final resources = getMandalaResources()
+        .where((r) => !idsToDelete.contains(r.folderId))
+        .toList(growable: false);
+    await _datasource.saveMandalaResourcesRaw(
+      resources.map((r) => r.toMap()).toList(growable: false),
+    );
+    for (final id in idsToDelete) {
+      await _removeResourceFolderOrder(id);
+      await _removeResourceItemsOrderForFolder(id);
+    }
+  }
+
+  List<ResourceFolderModel> getChildResourceFolders(String? parentId) {
+    final normalizedParent = parentId?.trim();
+    final allFolders = getResourceFolders();
+    final folderIds = allFolders.map((folder) => folder.id).toSet();
+    return getResourceFolders()
+        .where((folder) {
+          final folderParent = folder.parentId?.trim();
+          if (folderParent != null && folderParent.isNotEmpty) {
+            if (!folderIds.contains(folderParent)) return false;
+          }
+          if (normalizedParent == null || normalizedParent.isEmpty) {
+            return folderParent == null || folderParent.isEmpty;
+          }
+          return folderParent == normalizedParent;
+        })
+        .toList(growable: false);
+  }
+
+  Future<void> normalizeResourcesFolders(String fallbackFolderId) async {
+    final all = getMandalaResources();
+    var changed = false;
+    final next = <MandalaResourceModel>[];
+    for (final item in all) {
+      if (item.folderId.trim().isEmpty) {
+        next.add(item.copyWith(folderId: fallbackFolderId));
+        changed = true;
+      } else {
+        next.add(item);
+      }
+    }
+    if (!changed) return;
+    await _datasource.saveMandalaResourcesRaw(
+      next.map((r) => r.toMap()).toList(growable: false),
+    );
+  }
+
+  Future<void> _saveResourceFolders(List<ResourceFolderModel> folders) async {
+    await _datasource.saveSetting(
+      _resourceFoldersKey,
+      folders.map((f) => f.toMap()).toList(growable: false),
+    );
+  }
+
+  Future<void> saveResourceFoldersOrderIds(
+    List<String> orderedFolderIds,
+  ) async {
+    await _datasource.saveSetting(
+      _resourceFoldersOrderKey,
+      orderedFolderIds.toList(growable: false),
+    );
+  }
+
+  Future<void> saveResourceItemsOrderForFolder(
+    String folderId,
+    List<String> orderedItemIds,
+  ) async {
+    final map = _getResourceItemsOrderByFolder();
+    map[folderId] = orderedItemIds.toList(growable: false);
+    await _saveResourceItemsOrderByFolder(map);
+  }
+
+  List<String> _getResourceFoldersOrderIds() {
+    final raw = _datasource.getSetting(_resourceFoldersOrderKey) as List?;
+    if (raw == null) return <String>[];
+    return raw.map((item) => item.toString()).toList(growable: false);
+  }
+
+  Map<String, List<String>> _getResourceItemsOrderByFolder() {
+    final raw = _datasource.getSetting(_resourceItemsOrderByFolderKey);
+    if (raw is! Map) return <String, List<String>>{};
+    final out = <String, List<String>>{};
+    for (final entry in raw.entries) {
+      final key = entry.key.toString();
+      final value = entry.value;
+      if (value is List) {
+        out[key] = value.map((item) => item.toString()).toList(growable: false);
+      }
+    }
+    return out;
+  }
+
+  Future<void> _saveResourceItemsOrderByFolder(
+    Map<String, List<String>> map,
+  ) async {
+    final serializable = <String, dynamic>{
+      for (final entry in map.entries)
+        entry.key: entry.value.toList(growable: false),
+    };
+    await _datasource.saveSetting(_resourceItemsOrderByFolderKey, serializable);
+  }
+
+  Future<void> _appendResourceFolderOrder(String folderId) async {
+    final order = List<String>.from(_getResourceFoldersOrderIds());
+    if (order.contains(folderId)) return;
+    order.add(folderId);
+    await saveResourceFoldersOrderIds(order);
+  }
+
+  Set<String> _collectDescendantFolderIds(
+    List<ResourceFolderModel> folders, {
+    required String rootFolderId,
+  }) {
+    final descendants = <String>{};
+    final queue = <String>[rootFolderId];
+    while (queue.isNotEmpty) {
+      final current = queue.removeLast();
+      for (final folder in folders) {
+        if (folder.parentId != current) continue;
+        if (descendants.add(folder.id)) {
+          queue.add(folder.id);
+        }
+      }
+    }
+    return descendants;
+  }
+
+  String? _resolveParentId({
+    required String? parentId,
+    required List<ResourceFolderModel> allFolders,
+    required String? currentFolderId,
+  }) {
+    final normalized = parentId?.trim();
+    if (normalized == null || normalized.isEmpty) return null;
+    if (normalized == currentFolderId) return null;
+    final folderById = <String, ResourceFolderModel>{
+      for (final folder in allFolders) folder.id: folder,
+    };
+    if (!folderById.containsKey(normalized)) return null;
+
+    if (currentFolderId == null) return normalized;
+    var cursor = normalized;
+    final visited = <String>{};
+    while (true) {
+      if (!visited.add(cursor)) return null;
+      if (cursor == currentFolderId) return null;
+      final parent = folderById[cursor]?.parentId?.trim();
+      if (parent == null || parent.isEmpty) return normalized;
+      cursor = parent;
+    }
+  }
+
+  Future<void> _removeResourceFolderOrder(String folderId) async {
+    final order = List<String>.from(_getResourceFoldersOrderIds());
+    if (!order.remove(folderId)) return;
+    await saveResourceFoldersOrderIds(order);
+  }
+
+  Future<void> _removeResourceItemsOrderForFolder(String folderId) async {
+    final map = _getResourceItemsOrderByFolder();
+    if (map.remove(folderId) == null) return;
+    await _saveResourceItemsOrderByFolder(map);
+  }
+
+  Future<void> _syncResourceItemOrderOnSave({
+    required MandalaResourceModel saved,
+    required String? previousFolderId,
+    required bool isNew,
+  }) async {
+    final map = _getResourceItemsOrderByFolder();
+    if (previousFolderId != null && previousFolderId != saved.folderId) {
+      final prev = List<String>.from(map[previousFolderId] ?? const <String>[]);
+      if (prev.remove(saved.id)) {
+        map[previousFolderId] = prev;
+      }
+    }
+
+    final target = List<String>.from(map[saved.folderId] ?? const <String>[]);
+    if (!target.contains(saved.id)) {
+      if (isNew) {
+        target.insert(0, saved.id);
+      } else {
+        target.add(saved.id);
+      }
+      map[saved.folderId] = target;
+      await _saveResourceItemsOrderByFolder(map);
+      return;
+    }
+    if (map.isNotEmpty) {
+      await _saveResourceItemsOrderByFolder(map);
+    }
+  }
+
+  List<T> _applyManualOrder<T>({
+    required List<T> items,
+    required String Function(T item) idOf,
+    required List<String> order,
+    required int Function(T a, T b) fallbackCompare,
+  }) {
+    if (items.length <= 1) return items;
+    final rank = <String, int>{
+      for (var i = 0; i < order.length; i++) order[i]: i,
+    };
+    final sorted = List<T>.from(items);
+    sorted.sort((a, b) {
+      final ra = rank[idOf(a)];
+      final rb = rank[idOf(b)];
+      if (ra != null && rb != null) return ra.compareTo(rb);
+      if (ra != null) return -1;
+      if (rb != null) return 1;
+      return fallbackCompare(a, b);
+    });
+    return sorted;
   }
 }
 

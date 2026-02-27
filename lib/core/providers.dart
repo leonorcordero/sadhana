@@ -7,6 +7,10 @@ import 'package:sadhana/data/datasources/local_storage_datasource.dart';
 import 'package:sadhana/data/repositories/sadhana_repository.dart';
 import 'package:sadhana/features/app_shell/application/app_controller.dart';
 import 'package:sadhana/features/app_shell/application/app_state.dart';
+import 'package:sadhana/features/resources/application/resources_audio_controller.dart';
+import 'package:sadhana/features/utilities/application/counter_controller.dart';
+import 'package:sadhana/features/utilities/application/recorder_controller.dart';
+import 'package:sadhana/features/utilities/application/stopwatch_controller.dart';
 
 final localStorageDatasourceProvider = Provider<LocalStorageDatasource>((ref) {
   return LocalStorageDatasource();
@@ -22,6 +26,32 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
 
 final dailyClosureServiceProvider = Provider<DailyClosureService>((ref) {
   return DailyClosureService();
+});
+
+final resourcesAudioControllerProvider = Provider<ResourcesAudioController>((
+  ref,
+) {
+  final controller = ResourcesAudioController();
+  ref.onDispose(controller.dispose);
+  return controller;
+});
+
+final stopwatchControllerProvider = Provider<StopwatchController>((ref) {
+  final controller = StopwatchController();
+  ref.onDispose(controller.dispose);
+  return controller;
+});
+
+final counterControllerProvider = Provider<CounterController>((ref) {
+  final controller = CounterController();
+  ref.onDispose(controller.dispose);
+  return controller;
+});
+
+final recorderControllerProvider = Provider<RecorderController>((ref) {
+  final controller = RecorderController();
+  ref.onDispose(controller.dispose);
+  return controller;
 });
 
 final appSettingsProvider =

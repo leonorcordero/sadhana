@@ -238,12 +238,27 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'ACTIVIDADES DEL DÍA',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      letterSpacing: 1.4,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'ACTIVIDADES DEL DÍA',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                letterSpacing: 1.4,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => _showAddManualEventDialog(
+                          repo,
+                          initialDate: state.selectedDate,
+                        ),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Agregar evento'),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -718,5 +733,101 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
       'diciembre',
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
+  Future<void> _showAddManualEventDialog(
+    SadhanaRepository repo, {
+    required DateTime initialDate,
+  }) async {
+    final titleCtrl = TextEditingController();
+    final descriptionCtrl = TextEditingController();
+    DateTime selectedDate = DateTime(
+      initialDate.year,
+      initialDate.month,
+      initialDate.day,
+    );
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: const Text('Agregar evento manual'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(labelText: 'Título'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: descriptionCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción (opcional)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Fecha'),
+                  subtitle: Text(_formatDayMonthYear(selectedDate)),
+                  trailing: const Icon(Icons.calendar_today_outlined, size: 18),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2020, 1, 1),
+                      lastDate: DateTime(2100, 12, 31),
+                    );
+                    if (picked == null) return;
+                    setModalState(() {
+                      selectedDate = DateTime(
+                        picked.year,
+                        picked.month,
+                        picked.day,
+                      );
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) return;
+    final title = titleCtrl.text.trim();
+    if (title.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El título es obligatorio.')),
+      );
+      return;
+    }
+
+    final event = CalendarCustomEvent.create(
+      title: title,
+      description: descriptionCtrl.text.trim().isEmpty
+          ? null
+          : descriptionCtrl.text.trim(),
+      dateKey: DateUtilsX.dateKey(selectedDate),
+    );
+    await repo.upsertCustomEvent(event);
+    if (!mounted) return;
+    ref.read(appControllerProvider.notifier).selectDate(selectedDate);
+    await _reloadCalendarData();
   }
 }

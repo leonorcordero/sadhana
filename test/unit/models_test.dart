@@ -3,6 +3,7 @@ import 'package:sadhana/core/utils/date_utils.dart';
 import 'package:sadhana/data/models/cycle_model.dart';
 import 'package:sadhana/data/models/day_log_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
+import 'package:sadhana/data/models/wednesday_affirmation_model.dart';
 
 void main() {
   // ── DateUtilsX ─────────────────────────────────────────────────────────────
@@ -215,6 +216,39 @@ void main() {
       expect(updated.sankalpa, c.sankalpa);
       expect(updated.isActive, isTrue);
       expect(updated.currentDay, 3);
+    });
+  });
+
+  group('WednesdayAffirmationModel', () {
+    test('fromMap soporta datos antiguos con defaults seguros', () {
+      final model = WednesdayAffirmationModel.fromMap({
+        'meditationDateKey': '2026-02-24',
+      });
+
+      expect(model.meditationDateKey, '2026-02-24');
+      expect(model.name, isNull);
+      expect(model.contentType, 'text');
+      expect(model.text, isNull);
+      expect(model.imagePath, isNull);
+      expect(model.updatedAt, isNotEmpty);
+    });
+
+    test('toMap y fromMap conservan campos', () {
+      final original = WednesdayAffirmationModel(
+        meditationDateKey: '2026-02-25',
+        name: 'Leo',
+        contentType: 'image',
+        text: null,
+        imagePath: '/tmp/a.png',
+        updatedAt: '2026-02-24T10:00:00.000Z',
+      );
+
+      final restored = WednesdayAffirmationModel.fromMap(original.toMap());
+      expect(restored.meditationDateKey, original.meditationDateKey);
+      expect(restored.name, original.name);
+      expect(restored.contentType, original.contentType);
+      expect(restored.imagePath, original.imagePath);
+      expect(restored.updatedAt, original.updatedAt);
     });
   });
 }

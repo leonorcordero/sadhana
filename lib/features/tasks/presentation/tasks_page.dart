@@ -200,7 +200,7 @@ class _CycleTasksSection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               child: Text(
-                'Sin tareas. Agrégalas desde Mándalas.',
+                'Sin tareas. Agrégalas desde Mandalas.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),

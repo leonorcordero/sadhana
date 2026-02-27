@@ -6,7 +6,7 @@ import 'package:sadhana/data/models/task_model.dart';
 
 class LocalStorageDatasource {
   static const _schemaVersionKey = 'schema_version';
-  static const _currentSchemaVersion = 1;
+  static const _currentSchemaVersion = 2;
   static const _customEventsKey = 'custom_calendar_events';
   static const _externalEventsKey = 'external_calendar_events';
   static const _externalHiddenEventsKey = 'external_calendar_hidden_event_ids';
@@ -16,6 +16,7 @@ class LocalStorageDatasource {
   static const _diaryKey = 'diary_entries';
   static const _notesKey = 'notes';
   static const _mandalaResourcesKey = 'mandala_resources';
+  static const _resourceFoldersKey = 'resource_folders';
 
   Future<void> init() async {
     await Hive.initFlutter();
@@ -254,7 +255,21 @@ class LocalStorageDatasource {
     final current = (_settingsBox.get(_schemaVersionKey) as int?) ?? 0;
     if (current >= _currentSchemaVersion) return;
 
-    // Reserved for future structural migrations.
+    if (current < 2) {
+      final rawFolders = _settingsBox.get(_resourceFoldersKey);
+      if (rawFolders is List) {
+        final migrated = rawFolders
+            .whereType<Map>()
+            .map((entry) {
+              final map = Map<String, dynamic>.from(entry);
+              map.putIfAbsent('parentId', () => null);
+              return map;
+            })
+            .toList(growable: false);
+        await _settingsBox.put(_resourceFoldersKey, migrated);
+      }
+    }
+
     await _settingsBox.put(_schemaVersionKey, _currentSchemaVersion);
   }
 }

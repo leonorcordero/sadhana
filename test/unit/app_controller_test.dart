@@ -72,6 +72,8 @@ class SilentNotificationService extends NotificationService {
   Future<void> scheduleDailyReminders({
     List<int> hours = const [9, 14, 20],
     bool enabled = true,
+    String contentType = 'focus',
+    String customText = '',
   }) async {}
 
   @override

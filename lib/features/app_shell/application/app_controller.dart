@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/services/daily_closure_service.dart';
 import 'package:sadhana/core/services/notification_service.dart';
+import 'package:sadhana/core/settings/app_settings.dart';
 import 'package:sadhana/data/models/cycle_model.dart';
 import 'package:sadhana/data/models/day_log_model.dart';
+import 'package:sadhana/data/models/mandala_resource_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
 import 'package:sadhana/data/repositories/sadhana_repository.dart';
 import 'package:sadhana/features/app_shell/application/app_state.dart';
@@ -21,21 +23,29 @@ class AppController extends StateNotifier<AppState> {
   final NotificationService _notificationService;
   bool _remindersEnabled = true;
   List<int> _reminderHours = const [9, 14, 20];
+  String _reminderContentType = AppSettings.defaultReminderContentType;
+  String _customReminderText = AppSettings.defaultCustomReminderText;
 
   Timer? _midnightTimer;
 
   Future<void> initialize({
     bool remindersEnabled = true,
     List<int> reminderHours = const [9, 14, 20],
+    String reminderContentType = AppSettings.defaultReminderContentType,
+    String customReminderText = AppSettings.defaultCustomReminderText,
   }) async {
     _remindersEnabled = remindersEnabled;
     _reminderHours = List<int>.from(reminderHours);
+    _reminderContentType = reminderContentType;
+    _customReminderText = customReminderText;
     await _repository.closePendingDaysUntilYesterday();
     _loadState();
     _scheduleDailyClosure();
     await _notificationService.scheduleDailyReminders(
       enabled: _remindersEnabled,
       hours: _reminderHours,
+      contentType: _reminderContentType,
+      customText: _customReminderText,
     );
   }
 
@@ -69,6 +79,8 @@ class AppController extends StateNotifier<AppState> {
     required bool customDuration,
     required String sankalpa,
     String? archetype,
+    int circle = 0,
+    List<String> selectedSavedAudioIds = const [],
     List<({String title, String? description})> tasks = const [],
   }) async {
     try {
@@ -78,6 +90,7 @@ class AppController extends StateNotifier<AppState> {
         customDuration: customDuration,
         sankalpa: sankalpa,
         archetype: archetype,
+        circle: circle,
       );
       await _repository.createCycle(cycle);
       await _repository.startCycle(cycle.id);
@@ -89,6 +102,26 @@ class AppController extends StateNotifier<AppState> {
             description: t.description,
           ),
         );
+      }
+      if (selectedSavedAudioIds.isNotEmpty) {
+        final ids = selectedSavedAudioIds.toSet();
+        final sourceAudios = _repository
+            .getMandalaResources()
+            .where(
+              (r) => r.type == MandalaResourceType.audio && ids.contains(r.id),
+            )
+            .toList(growable: false);
+        for (final source in sourceAudios) {
+          await _repository.saveMandalaResource(
+            MandalaResourceModel.create(
+              cycleId: cycle.id,
+              folderId: cycle.id,
+              title: source.title,
+              type: MandalaResourceType.audio,
+              filePath: source.filePath,
+            ),
+          );
+        }
       }
       _loadState();
     } catch (e) {
@@ -226,12 +259,18 @@ class AppController extends StateNotifier<AppState> {
   Future<void> reconfigureNotifications({
     required bool enabled,
     required List<int> hours,
+    required String contentType,
+    required String customText,
   }) async {
     _remindersEnabled = enabled;
     _reminderHours = List<int>.from(hours);
+    _reminderContentType = contentType;
+    _customReminderText = customText;
     await _notificationService.scheduleDailyReminders(
       enabled: _remindersEnabled,
       hours: _reminderHours,
+      contentType: _reminderContentType,
+      customText: _customReminderText,
     );
   }
 
@@ -244,6 +283,8 @@ class AppController extends StateNotifier<AppState> {
       await _notificationService.scheduleDailyReminders(
         enabled: _remindersEnabled,
         hours: _reminderHours,
+        contentType: _reminderContentType,
+        customText: _customReminderText,
       );
       _scheduleDailyClosure();
     });

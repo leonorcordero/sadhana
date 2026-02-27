@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sadhana/core/providers.dart';
 import 'package:sadhana/core/settings/app_settings.dart';
 
@@ -15,17 +16,41 @@ class SettingsPage extends ConsumerStatefulWidget {
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   late TextEditingController _nameController;
+  late TextEditingController _customReminderController;
+  String _lastBackupActionAt = '';
+  String _appVersion = '-';
+  String _buildNumber = '-';
 
   @override
   void initState() {
     super.initState();
     final name = ref.read(appSettingsProvider).name;
     _nameController = TextEditingController(text: name);
+    _customReminderController = TextEditingController(
+      text: ref.read(appSettingsProvider).customReminderText,
+    );
+    _lastBackupActionAt =
+        (ref
+                .read(localStorageDatasourceProvider)
+                .getSetting('backup_last_action_at')
+            as String?) ??
+        '';
+    _loadAppInfo();
+  }
+
+  Future<void> _loadAppInfo() async {
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    setState(() {
+      _appVersion = info.version;
+      _buildNumber = info.buildNumber;
+    });
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _customReminderController.dispose();
     super.dispose();
   }
 
@@ -34,6 +59,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final settings = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
     final theme = Theme.of(context);
+    final selectedPaletteIndex = AppSettings.palettes.indexWhere(
+      (palette) => palette.seed == settings.themeColor,
+    );
+    final paletteIndex = selectedPaletteIndex < 0 ? 0 : selectedPaletteIndex;
 
     return Scaffold(
       appBar: AppBar(
@@ -87,47 +116,93 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           // ── Color ──────────────────────────────────────────────────────
           _SectionCard(
             label: 'COLOR',
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: AppSettings.presetColors.map((color) {
-                final isSelected = settings.themeColor == color;
-                final checkColor =
-                    ThemeData.estimateBrightnessForColor(color) ==
-                        Brightness.dark
-                    ? Colors.white
-                    : Colors.black87;
-                return GestureDetector(
-                  onTap: () => notifier.setColor(color),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isSelected
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.outlineVariant,
-                        width: 3,
-                      ),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: color.withValues(alpha: 0.5),
-                                blurRadius: 8,
-                                spreadRadius: 2,
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: isSelected
-                        ? Icon(Icons.check, color: checkColor, size: 20)
-                        : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Toca para desplegar paletas',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                );
-              }).toList(),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<int>(
+                  initialValue: paletteIndex,
+                  decoration: const InputDecoration(
+                    labelText: 'Paleta de color',
+                  ),
+                  items: List.generate(AppSettings.palettes.length, (index) {
+                    final palette = AppSettings.palettes[index];
+                    final lightTone = Color.alphaBlend(
+                      Colors.white.withValues(alpha: 0.72),
+                      palette.seed,
+                    );
+                    final darkTone = Color.alphaBlend(
+                      Colors.black.withValues(alpha: 0.28),
+                      palette.seed,
+                    );
+                    return DropdownMenuItem<int>(
+                      value: index,
+                      child: Row(
+                        children: [
+                          _ToneDot(color: lightTone),
+                          const SizedBox(width: 6),
+                          _ToneDot(color: palette.seed),
+                          const SizedBox(width: 6),
+                          _ToneDot(color: darkTone),
+                          const SizedBox(width: 10),
+                          Text('Paleta ${index + 1}'),
+                        ],
+                      ),
+                    );
+                  }),
+                  onChanged: (index) {
+                    if (index == null) return;
+                    notifier.setColor(AppSettings.palettes[index].seed);
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Tipografía ─────────────────────────────────────────────────
+          _SectionCard(
+            label: 'TAMAÑO DE LETRA',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Ajusta el tamaño del texto en toda la app.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Text('Pequeño', style: theme.textTheme.labelSmall),
+                    Expanded(
+                      child: Slider(
+                        value: settings.textScale,
+                        min: 0.85,
+                        max: 1.15,
+                        divisions: 6,
+                        label: '${(settings.textScale * 100).round()}%',
+                        onChanged: notifier.setTextScale,
+                      ),
+                    ),
+                    Text('Grande', style: theme.textTheme.labelSmall),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Escala actual: ${(settings.textScale * 100).round()}%',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -145,6 +220,57 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   onChanged: (value) => notifier.setRemindersEnabled(value),
                 ),
                 if (settings.remindersEnabled) ...[
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: settings.reminderContentType,
+                    decoration: const InputDecoration(
+                      labelText: 'Contenido del recordatorio',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'focus',
+                        child: Text('Mensaje de enfoque'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'pending',
+                        child: Text('Tareas pendientes'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'motivational',
+                        child: Text('Frase motivacional'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'custom',
+                        child: Text('Texto personalizado'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      notifier.setReminderContentType(value);
+                    },
+                  ),
+                  if (settings.reminderContentType == 'custom') ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _customReminderController,
+                      maxLength: 120,
+                      decoration: InputDecoration(
+                        labelText: 'Texto del recordatorio',
+                        hintText: 'Escribe el mensaje de tu notificación',
+                        counterText: '',
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.check),
+                          onPressed: () {
+                            notifier.setCustomReminderText(
+                              _customReminderController.text,
+                            );
+                            FocusScope.of(context).unfocus();
+                          },
+                        ),
+                      ),
+                      onSubmitted: notifier.setCustomReminderText,
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   _HourPickerRow(
                     title: 'Hora 1',
@@ -211,6 +337,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   icon: const Icon(Icons.download_for_offline_outlined),
                   label: const Text('Importar JSON'),
                 ),
+                if (_lastBackupActionAt.isNotEmpty)
+                  Text(
+                    'Último backup: $_lastBackupActionAt',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          _SectionCard(
+            label: 'APP',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Versión: $_appVersion'),
+                const SizedBox(height: 4),
+                Text('Compilación: $_buildNumber'),
               ],
             ),
           ),
@@ -222,8 +368,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _exportBackup() async {
     final repository = ref.read(repositoryProvider);
     final json = await repository.exportBackupJson();
+    final now = DateTime.now().toIso8601String();
 
     await Clipboard.setData(ClipboardData(text: json));
+    await ref
+        .read(localStorageDatasourceProvider)
+        .saveSetting('backup_last_action_at', now);
+    if (mounted) {
+      setState(() => _lastBackupActionAt = now);
+    }
 
     if (!mounted) return;
     await showDialog<void>(
@@ -272,14 +425,61 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 final raw = controller.text.trim();
                 if (raw.isEmpty) return;
 
-                // Quick validation feedback before import.
-                jsonDecode(raw);
+                final decoded = jsonDecode(raw);
+                if (decoded is! Map) {
+                  throw const FormatException('Formato de backup invalido');
+                }
+                final payload = Map<String, dynamic>.from(decoded);
+                final cyclesCount = (payload['cycles'] as List?)?.length ?? 0;
+                final tasksCount = (payload['tasks'] as List?)?.length ?? 0;
+                final logsCount = (payload['dayLogs'] as List?)?.length ?? 0;
+                final settingsCount =
+                    (payload['settings'] as Map?)?.length ?? 0;
+
+                final confirmed = await showDialog<bool>(
+                  context: ctx,
+                  builder: (confirmCtx) => AlertDialog(
+                    title: const Text('Confirmar importación'),
+                    content: Text(
+                      'Este proceso reemplazará todos los datos actuales.\n\n'
+                      'Ciclos: $cyclesCount\n'
+                      'Tareas: $tasksCount\n'
+                      'Registros diarios: $logsCount\n'
+                      'Ajustes: $settingsCount',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(confirmCtx, false),
+                        child: const Text('Cancelar'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(confirmCtx, true),
+                        child: const Text('Reemplazar todo'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true) return;
+
                 await repository.importBackupJson(raw);
+                final now = DateTime.now().toIso8601String();
+                await ref
+                    .read(localStorageDatasourceProvider)
+                    .saveSetting('backup_last_action_at', now);
+                if (mounted) {
+                  setState(() => _lastBackupActionAt = now);
+                }
                 await appController.initialize(
                   remindersEnabled: ref
                       .read(appSettingsProvider)
                       .remindersEnabled,
                   reminderHours: ref.read(appSettingsProvider).reminderHours,
+                  reminderContentType: ref
+                      .read(appSettingsProvider)
+                      .reminderContentType,
+                  customReminderText: ref
+                      .read(appSettingsProvider)
+                      .customReminderText,
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
               } catch (_) {
@@ -329,6 +529,25 @@ class _SectionCard extends StatelessWidget {
             child,
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ToneDot extends StatelessWidget {
+  const _ToneDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
     );
   }

@@ -58,6 +58,8 @@
 	<string>LaunchScreen</string>
 	<key>NSUserNotificationUsageDescription</key>
 	<string>Sadhana usa notificaciones para recordarte tus practicas diarias.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Sadhana necesita acceso al micrófono para grabar audios.</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>

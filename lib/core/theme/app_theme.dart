@@ -84,7 +84,11 @@ class AppTheme {
         letterSpacing: 0.1,
       ),
       bodyLarge: TextStyle(fontFamily: inter, fontSize: 16, letterSpacing: 0.5),
-      bodyMedium: TextStyle(fontFamily: inter, fontSize: 15, letterSpacing: 0.25),
+      bodyMedium: TextStyle(
+        fontFamily: inter,
+        fontSize: 15,
+        letterSpacing: 0.25,
+      ),
       bodySmall: TextStyle(fontFamily: inter, fontSize: 14, letterSpacing: 0.3),
       // ── JetBrains Mono → etiquetas de datos (día X/Y, rachas, %) ─────────
       labelLarge: TextStyle(
@@ -106,11 +110,15 @@ class AppTheme {
         letterSpacing: 0.35,
       ),
     );
+    final readableTextTheme = textTheme.apply(
+      bodyColor: cs.onSurface,
+      displayColor: cs.onSurface,
+    );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
-      textTheme: textTheme,
+      textTheme: readableTextTheme,
       scaffoldBackgroundColor: _beige,
       // ── AppBar ─────────────────────────────────────────────────────────────
       appBarTheme: AppBarTheme(
@@ -178,6 +186,8 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
+        labelStyle: TextStyle(fontFamily: inter, color: cs.onSurfaceVariant),
+        hintStyle: TextStyle(fontFamily: inter, color: cs.onSurfaceVariant),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: _border),
@@ -193,6 +203,38 @@ class AppTheme {
       ),
       // ── Chips ──────────────────────────────────────────────────────────────
       chipTheme: const ChipThemeData(shape: StadiumBorder()),
+      popupMenuTheme: PopupMenuThemeData(
+        color: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        textStyle: readableTextTheme.bodyMedium?.copyWith(color: cs.onSurface),
+      ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: const WidgetStatePropertyAll(Colors.white),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
+      ),
+      dropdownMenuTheme: DropdownMenuThemeData(
+        textStyle: readableTextTheme.bodyLarge?.copyWith(color: cs.onSurface),
+        menuStyle: MenuStyle(
+          backgroundColor: const WidgetStatePropertyAll(Colors.white),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: Colors.white,
+        titleTextStyle: readableTextTheme.titleLarge?.copyWith(
+          color: cs.onSurface,
+        ),
+        contentTextStyle: readableTextTheme.bodyMedium?.copyWith(
+          color: cs.onSurface,
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: _beige,
+        modalBackgroundColor: _beige,
+        surfaceTintColor: Colors.transparent,
+      ),
       // ── NavigationBar ──────────────────────────────────────────────────────
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: cs.primary,
@@ -207,8 +249,8 @@ class AppTheme {
         ),
       ),
       listTileTheme: ListTileThemeData(
-        titleTextStyle: textTheme.bodyLarge,
-        subtitleTextStyle: textTheme.bodyMedium?.copyWith(
+        titleTextStyle: readableTextTheme.bodyLarge,
+        subtitleTextStyle: readableTextTheme.bodyMedium?.copyWith(
           color: cs.onSurfaceVariant,
         ),
         iconColor: cs.onSurfaceVariant,

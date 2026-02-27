@@ -62,6 +62,16 @@ class MandalaArchetype {
         return Icons.sports_martial_arts;
       case 'krishna':
         return Icons.music_note_outlined;
+      case 'ayunos':
+        return Icons.restaurant_outlined;
+      case 'redes_off':
+        return Icons.wifi_off_outlined;
+      case 'azucar_0':
+        return Icons.no_food_outlined;
+      case 'mowna':
+        return Icons.record_voice_over_outlined;
+      case 'no_harinas':
+        return Icons.bakery_dining_outlined;
       default:
         return Icons.self_improvement_outlined;
     }
@@ -139,12 +149,70 @@ class MandalaArchetype {
     colors: [Color(0xFF426D9D), Color(0xFF2F5A84)],
   );
 
+  static const ayunos = MandalaArchetype(
+    key: 'ayunos',
+    label: 'Ayunos',
+    emoji: '🥣',
+    colors: [Color(0xFF4D7A52), Color(0xFF345A3B)],
+  );
+
+  static const redesOff = MandalaArchetype(
+    key: 'redes_off',
+    label: 'Redes sociales OFF',
+    emoji: '📵',
+    colors: [Color(0xFF516B86), Color(0xFF384C63)],
+  );
+
+  static const azucar0 = MandalaArchetype(
+    key: 'azucar_0',
+    label: '0% Azúcar',
+    emoji: '🚫🍬',
+    colors: [Color(0xFF9B6A40), Color(0xFF7A4B2B)],
+  );
+
+  static const mowna = MandalaArchetype(
+    key: 'mowna',
+    label: 'Mowna',
+    emoji: '🤫',
+    colors: [Color(0xFF6C5B8E), Color(0xFF4F426B)],
+  );
+
+  static const noHarinas = MandalaArchetype(
+    key: 'no_harinas',
+    label: 'No harinas',
+    emoji: '🥖',
+    colors: [Color(0xFF8A6E4D), Color(0xFF6A5137)],
+  );
+
   static const otro = MandalaArchetype(
     key: 'otro',
-    label: 'Otro',
+    label: 'Agregar otros',
     emoji: '✍️',
     colors: [Color(0xFF7A8594), Color(0xFF5A6472)],
   );
+
+  static const List<MandalaArchetype> mandalaOptions = [
+    fuego,
+    luz,
+    cosmico,
+    estelar,
+    madre,
+    padre,
+    fuente,
+    ganesha,
+    hanuman,
+    krishna,
+    otro,
+  ];
+
+  static const List<MandalaArchetype> tapasyaOptions = [
+    ayunos,
+    redesOff,
+    azucar0,
+    mowna,
+    noHarinas,
+    otro,
+  ];
 
   static const List<MandalaArchetype> all = [
     fuego,
@@ -157,6 +225,11 @@ class MandalaArchetype {
     ganesha,
     hanuman,
     krishna,
+    ayunos,
+    redesOff,
+    azucar0,
+    mowna,
+    noHarinas,
     otro,
   ];
 

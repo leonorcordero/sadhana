@@ -28,6 +28,8 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
 
     final entry = repo.getDiaryEntry(date);
     final completedTasks = repo.getCompletedMandalaTasksForDay(date);
+    final weeklyStats = repo.getPracticeWindowStats(days: 7, untilDate: date);
+    final monthlyStats = repo.getPracticeWindowStats(days: 30, untilDate: date);
 
     final dateLabel =
         '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
@@ -149,9 +151,32 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
           ),
           const SizedBox(height: 16),
 
+          _SectionCard(
+            label: 'HISTORIAL DE PRÁCTICA',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _HistoryStatRow(
+                  label: 'Semanal (7 días)',
+                  daysWithPractice: weeklyStats.daysWithPractice,
+                  totalDays: 7,
+                  totalPractices: weeklyStats.totalPractices,
+                ),
+                const SizedBox(height: 8),
+                _HistoryStatRow(
+                  label: 'Mensual (30 días)',
+                  daysWithPractice: monthlyStats.daysWithPractice,
+                  totalDays: 30,
+                  totalPractices: monthlyStats.totalPractices,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // ── Tareas extras ─────────────────────────────────────────────────
           _SectionCard(
-            label: 'TAREAS EXTRAS',
+            label: 'TAREAS EXTRAS O PRÁCTICAS DIARIAS FUERA DE MANDALAS',
             trailing: IconButton(
               onPressed: () => _addExtraTask(date),
               icon: const Icon(Icons.add_task_outlined),
@@ -199,58 +224,6 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
                     ),
                   ),
           ),
-          const SizedBox(height: 16),
-
-          // ── Notas libres ──────────────────────────────────────────────────
-          _SectionCard(
-            label: 'NOTAS LIBRES',
-            trailing: IconButton(
-              onPressed: () => _addManualEntry(date),
-              icon: const Icon(Icons.add_circle_outline),
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Agregar nota',
-            ),
-            child: entry.manualEntries.isEmpty
-                ? Text(
-                    'Sin notas para este día.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: List.generate(
-                      entry.manualEntries.length,
-                      (i) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        leading: Icon(
-                          Icons.edit_note_outlined,
-                          size: 18,
-                          color: cs.primary,
-                        ),
-                        title: Text(
-                          entry.manualEntries[i],
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                        trailing: IconButton(
-                          icon: Icon(
-                            Icons.delete_outline,
-                            size: 18,
-                            color: cs.error,
-                          ),
-                          tooltip: 'Eliminar',
-                          onPressed: () async {
-                            await ref
-                                .read(repositoryProvider)
-                                .removeManualDiaryEntry(date, i);
-                            setState(() {});
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-          ),
         ],
       ),
     );
@@ -287,40 +260,6 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
       ),
     );
   }
-
-  Future<void> _addManualEntry(DateTime date) async {
-    final ctrl = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nueva nota'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLines: 4,
-          decoration: const InputDecoration(hintText: 'Escribe aquí...'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final text = ctrl.text.trim();
-              if (text.isEmpty) return;
-              await ref
-                  .read(repositoryProvider)
-                  .addManualDiaryEntry(date, text);
-              if (ctx.mounted) Navigator.pop(ctx);
-              setState(() {});
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ── Section card ──────────────────────────────────────────────────────────────
@@ -350,14 +289,18 @@ class _SectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(
-                  label,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    letterSpacing: 1.4,
-                    fontWeight: FontWeight.w800,
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      letterSpacing: 1.4,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-                if (trailing != null) ...[const Spacer(), trailing!],
+                ?trailing,
               ],
             ),
             const SizedBox(height: 12),
@@ -365,6 +308,52 @@ class _SectionCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _HistoryStatRow extends StatelessWidget {
+  const _HistoryStatRow({
+    required this.label,
+    required this.daysWithPractice,
+    required this.totalDays,
+    required this.totalPractices,
+  });
+
+  final String label;
+  final int daysWithPractice;
+  final int totalDays;
+  final int totalPractices;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Text(
+          '$daysWithPractice/$totalDays días',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: cs.primary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          '$totalPractices prácticas',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 }

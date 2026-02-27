@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/services.dart';
+import 'package:sadhana/core/constants/app_constants.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -11,8 +13,10 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+  bool get _isWeb => kIsWeb;
 
   Future<void> initialize() async {
+    if (_isWeb) return;
     tz.initializeTimeZones();
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -29,7 +33,10 @@ class NotificationService {
   Future<void> scheduleDailyReminders({
     List<int> hours = const [9, 14, 20],
     bool enabled = true,
+    String contentType = 'focus',
+    String customText = '',
   }) async {
+    if (_isWeb) return;
     if (!enabled) {
       await cancelDailyReminders();
       return;
@@ -60,13 +67,18 @@ class NotificationService {
       // Si aún falla (p. ej. el archivo estaba en caché), continuamos.
     }
 
+    final body = _buildReminderBody(
+      contentType: contentType,
+      customText: customText,
+    );
+
     for (var i = 0; i < normalized.length; i++) {
       final id = 100 + i;
       try {
         await _plugin.zonedSchedule(
           id,
           'Sadhana',
-          'Tienes tareas pendientes. Cierra tu dia con enfoque.',
+          body,
           _nextTime(normalized[i]),
           details,
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
@@ -81,7 +93,7 @@ class NotificationService {
             await _plugin.zonedSchedule(
               id,
               'Sadhana',
-              'Tienes tareas pendientes. Cierra tu dia con enfoque.',
+              body,
               _nextTime(normalized[i]),
               details,
               androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
@@ -101,6 +113,7 @@ class NotificationService {
   // Cancela los recordatorios pendientes del dia (usados cuando el usuario
   // completo todas sus tareas antes de que llegue el proximo recordatorio).
   Future<void> cancelDailyReminders() async {
+    if (_isWeb) return;
     await _clearLegacyNotificationPrefs();
     for (var i = 0; i < 12; i++) {
       try {
@@ -112,6 +125,7 @@ class NotificationService {
   }
 
   Future<void> showCompletionNotification() async {
+    if (_isWeb) return;
     const android = AndroidNotificationDetails(
       'sadhana_rewards',
       'Recompensas',
@@ -138,12 +152,32 @@ class NotificationService {
     return scheduled;
   }
 
+  String _buildReminderBody({
+    required String contentType,
+    required String customText,
+  }) {
+    switch (contentType) {
+      case 'pending':
+        return 'Tienes tareas pendientes. Vuelve a tu practica ahora.';
+      case 'motivational':
+        final seed = DateTime.now().day % AppConstants.reminderQuotes.length;
+        return AppConstants.reminderQuotes[seed];
+      case 'custom':
+        final normalized = customText.trim();
+        if (normalized.isNotEmpty) return normalized;
+        return 'Tienes tareas pendientes. Cierra tu dia con enfoque.';
+      case 'focus':
+      default:
+        return 'Tienes tareas pendientes. Cierra tu dia con enfoque.';
+    }
+  }
+
   /// Borra el archivo XML de SharedPreferences que usa flutter_local_notifications
   /// para persistir las notificaciones programadas. Necesario cuando los datos
   /// guardados con una versión anterior del plugin son incompatibles con la
   /// versión actual y causan un RuntimeException al deserializarse.
   Future<void> _clearLegacyNotificationPrefs() async {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
     try {
       final dir = await getApplicationDocumentsDirectory();
       // getApplicationDocumentsDirectory() devuelve <app>/app_flutter/
