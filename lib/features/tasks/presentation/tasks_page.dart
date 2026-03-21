@@ -17,14 +17,6 @@ class TasksPage extends ConsumerStatefulWidget {
 
 class _TasksPageState extends ConsumerState<TasksPage> {
   @override
-  void initState() {
-    super.initState();
-    Future.microtask(
-      () => ref.read(appControllerProvider.notifier).selectDate(DateTime.now()),
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
     final ref = this.ref;
     final state = ref.watch(appControllerProvider);
@@ -76,7 +68,7 @@ class _TasksPageState extends ConsumerState<TasksPage> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: cs.outlineVariant),
+              side: BorderSide.none,
             ),
             child: ListTile(
               title: Text(
@@ -134,12 +126,7 @@ class _CycleDivider extends StatelessWidget {
 
     return Row(
       children: [
-        Expanded(
-          child: Divider(
-            color: cs.outlineVariant.withValues(alpha: 0.65),
-            thickness: 1,
-          ),
-        ),
+        Expanded(child: Divider(color: Colors.transparent, thickness: 0)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Text(
@@ -152,12 +139,7 @@ class _CycleDivider extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(
-          child: Divider(
-            color: cs.outlineVariant.withValues(alpha: 0.65),
-            thickness: 1,
-          ),
-        ),
+        Expanded(child: Divider(color: Colors.transparent, thickness: 0)),
       ],
     );
   }
@@ -187,7 +169,7 @@ class _CycleTasksSection extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: cs.outlineVariant),
+        side: BorderSide.none,
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(

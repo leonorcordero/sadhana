@@ -94,10 +94,16 @@ class _SilentNotificationService extends NotificationService {
 
   @override
   Future<void> showCompletionNotification() async {}
+
+  @override
+  Future<void> scheduleMandalaStartReminders({
+    required List<CycleModel> cycles,
+    required bool enabled,
+  }) async {}
 }
 
 void main() {
-  testWidgets('cycles page muestra botones Mandala y Tapasya', (tester) async {
+  testWidgets('cycles page muestra menu de creacion en header', (tester) async {
     final datasource = _InMemoryDatasource();
     final repository = SadhanaRepository(datasource);
 
@@ -118,13 +124,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Mandalas y Tapasyas'), findsOneWidget);
-    expect(
-      find.widgetWithText(FloatingActionButton, 'Mandala'),
-      findsOneWidget,
-    );
-    expect(
-      find.widgetWithText(FloatingActionButton, 'Tapasya'),
-      findsOneWidget,
-    );
+    expect(find.byTooltip('Crear o usar plantilla'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Crear o usar plantilla'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Crear mandala'), findsOneWidget);
+    expect(find.text('Crear tapasya'), findsOneWidget);
+    expect(find.text('Usar plantilla'), findsOneWidget);
   });
 }

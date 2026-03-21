@@ -44,7 +44,6 @@ class _MoonCardTextsPageState extends ConsumerState<MoonCardTextsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Caja lunar')),
@@ -55,7 +54,7 @@ class _MoonCardTextsPageState extends ConsumerState<MoonCardTextsPage> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: cs.outlineVariant),
+              side: BorderSide.none,
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),

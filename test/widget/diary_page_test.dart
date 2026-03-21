@@ -100,6 +100,12 @@ class _SilentNotificationService extends NotificationService {
 
   @override
   Future<void> showCompletionNotification() async {}
+
+  @override
+  Future<void> scheduleMandalaStartReminders({
+    required List<CycleModel> cycles,
+    required bool enabled,
+  }) async {}
 }
 
 void main() {

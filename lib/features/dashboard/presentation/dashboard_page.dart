@@ -1,10 +1,13 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/providers.dart';
-import 'package:sadhana/core/utils/responsive_utils.dart';
 import 'package:sadhana/core/utils/date_utils.dart';
 import 'package:sadhana/core/utils/moon_phase_utils.dart';
+import 'package:sadhana/core/utils/responsive_utils.dart';
 import 'package:sadhana/data/models/cycle_model.dart';
 import 'package:sadhana/data/models/dashboard_snapshot.dart';
 import 'package:sadhana/data/repositories/sadhana_repository.dart';
@@ -66,16 +69,56 @@ String _capitalize(String value) =>
 
 // ── Página ────────────────────────────────────────────────────────────────────
 
-class DashboardPage extends ConsumerWidget {
+class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends ConsumerState<DashboardPage> {
+  DateTime _now = DateTime.now();
+  Timer? _clockTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleClockTick();
+  }
+
+  void _scheduleClockTick() {
+    _clockTimer?.cancel();
+    final now = DateTime.now();
+    final next = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute + 1,
+    );
+    _clockTimer = Timer(next.difference(now), () {
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+      _scheduleClockTick();
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(appControllerProvider);
+    if (state.isLoading) {
+      return const SafeArea(child: _DashboardLoadingSkeleton());
+    }
     final settings = ref.watch(appSettingsProvider);
     final cycles = state.activeCycles;
     final repo = ref.read(repositoryProvider);
-    final today = DateTime.now();
+    final today = _now;
     final calendarDay = state.selectedDate;
 
     final moonName = MoonPhaseUtils.phaseName(today);
@@ -90,88 +133,129 @@ class DashboardPage extends ConsumerWidget {
         .length;
     final isCompactLayout = ResponsiveUtils.isNarrowPhone(context);
     final spacingScale = ResponsiveUtils.spacingScale(context);
+    final cs = Theme.of(context).colorScheme;
 
     return SafeArea(
-      child: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16 * spacingScale,
-          20 * spacingScale,
-          16 * spacingScale,
-          132 * spacingScale,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color.alphaBlend(
+                cs.primary.withValues(alpha: 0.08),
+                Theme.of(context).scaffoldBackgroundColor,
+              ),
+              Theme.of(context).scaffoldBackgroundColor,
+            ],
+          ),
         ),
-        children: [
-          _Header(
-            appName: settings.name,
-            date: today,
-            appIconPath: settings.iconPath,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            16 * spacingScale,
+            20 * spacingScale,
+            16 * spacingScale,
+            132 * spacingScale,
           ),
-          SizedBox(height: 24 * spacingScale),
-          if (isCompactLayout) ...[
-            _MoonCard(
-              moonName: moonName,
-              showNightWarning: moonName.toLowerCase().contains('creciente'),
-              showDayOnlyHint: isNewMoon,
-              nightWarningText: moonCardTexts.nightWarningText,
-              dayOnlyText: moonCardTexts.dayOnlyText,
+          children: [
+            _DashboardReveal(
+              index: 0,
+              child: _Header(
+                appName: settings.name,
+                date: today,
+                appIconPath: settings.iconPath,
+              ),
             ),
-            SizedBox(height: 10 * spacingScale),
-            _SpecialDayCard(
-              date: calendarDay,
-              eventTitles: calendarDayEventTitles,
-            ),
-          ] else
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _MoonCard(
-                    moonName: moonName,
-                    showNightWarning: moonName.toLowerCase().contains(
-                      'creciente',
-                    ),
-                    showDayOnlyHint: isNewMoon,
-                    nightWarningText: moonCardTexts.nightWarningText,
-                    dayOnlyText: moonCardTexts.dayOnlyText,
+            SizedBox(height: 24 * spacingScale),
+            if (isCompactLayout) ...[
+              _DashboardReveal(
+                index: 1,
+                child: _MoonCard(
+                  moonName: moonName,
+                  showNightWarning: moonName.toLowerCase().contains(
+                    'creciente',
                   ),
-                ),
-                SizedBox(width: 10 * spacingScale),
-                Expanded(
-                  child: _SpecialDayCard(
-                    date: calendarDay,
-                    eventTitles: calendarDayEventTitles,
-                  ),
-                ),
-              ],
-            ),
-          SizedBox(height: 12 * spacingScale),
-          const _AffirmationsCard(),
-          SizedBox(height: 12 * spacingScale),
-          _DiaryTodayCard(
-            taskCount: completedMandalaCount,
-            extraTaskCount: diaryEntry.extraTasks.length,
-            noteCount: diaryEntry.manualEntries.length,
-          ),
-          SizedBox(height: 20 * spacingScale),
-          const _MandalasSectionBand(),
-          SizedBox(height: 12 * spacingScale),
-
-          // ── Ciclos activos ───────────────────────────────────────────────
-          if (cycles.isEmpty)
-            _EmptyState(onCreateTap: () => showCreateCycleSheet(context, ref))
-          else
-            for (final cycle in cycles) ...[
-              _CycleBadge(cycle: cycle),
-              SizedBox(height: 10 * spacingScale),
-              _CycleCard(
-                cycle: cycle,
-                snapshot: repo.getDashboardSnapshotForCycle(
-                  cycleId: cycle.id,
-                  date: state.selectedDate,
+                  showDayOnlyHint: isNewMoon,
+                  nightWarningText: moonCardTexts.nightWarningText,
+                  dayOnlyText: moonCardTexts.dayOnlyText,
                 ),
               ),
-              SizedBox(height: 16 * spacingScale),
-            ],
-        ],
+              SizedBox(height: 10 * spacingScale),
+              _DashboardReveal(
+                index: 2,
+                child: _SpecialDayCard(
+                  date: calendarDay,
+                  eventTitles: calendarDayEventTitles,
+                ),
+              ),
+            ] else
+              _DashboardReveal(
+                index: 1,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _MoonCard(
+                        moonName: moonName,
+                        showNightWarning: moonName.toLowerCase().contains(
+                          'creciente',
+                        ),
+                        showDayOnlyHint: isNewMoon,
+                        nightWarningText: moonCardTexts.nightWarningText,
+                        dayOnlyText: moonCardTexts.dayOnlyText,
+                      ),
+                    ),
+                    SizedBox(width: 10 * spacingScale),
+                    Expanded(
+                      child: _SpecialDayCard(
+                        date: calendarDay,
+                        eventTitles: calendarDayEventTitles,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            SizedBox(height: 12 * spacingScale),
+            const _DashboardReveal(index: 3, child: _AffirmationsCard()),
+            SizedBox(height: 12 * spacingScale),
+            _DashboardReveal(
+              index: 4,
+              child: _DiaryTodayCard(
+                taskCount: completedMandalaCount,
+                extraTaskCount: diaryEntry.extraTasks.length,
+                noteCount: diaryEntry.manualEntries.length,
+              ),
+            ),
+            SizedBox(height: 20 * spacingScale),
+            const _DashboardReveal(index: 5, child: _MandalasSectionBand()),
+            SizedBox(height: 12 * spacingScale),
+
+            // ── Ciclos activos ───────────────────────────────────────────────
+            if (cycles.isEmpty)
+              _DashboardReveal(
+                index: 6,
+                child: _EmptyState(
+                  onCreateTap: () => showCreateCycleSheet(context, ref),
+                ),
+              )
+            else
+              for (var index = 0; index < cycles.length; index++) ...[
+                _CycleBadge(cycle: cycles[index]),
+                SizedBox(height: 10 * spacingScale),
+                _DashboardReveal(
+                  index: 6 + index,
+                  child: _CycleCard(
+                    cycle: cycles[index],
+                    snapshot: repo.getDashboardSnapshotForCycle(
+                      cycleId: cycles[index].id,
+                      date: state.selectedDate,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 16 * spacingScale),
+              ],
+          ],
+        ),
       ),
     );
   }
@@ -195,41 +279,48 @@ class _Header extends StatelessWidget {
     final theme = Theme.of(context);
     final typeScale = ResponsiveUtils.typographyScale(context);
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          flex: 5,
-          child: _buildName(theme: theme, typeScale: typeScale),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              flex: 5,
+              child: _buildName(theme: theme, typeScale: typeScale),
+            ),
+            Flexible(
+              flex: 4,
+              child: _buildDateTime(
+                context: context,
+                theme: theme,
+                alignEnd: true,
+              ),
+            ),
+            const SizedBox(width: 6),
+            IconButton(
+              tooltip: 'Ajustes',
+              icon: Icon(
+                Icons.settings_outlined,
+                size: 22,
+                color: theme.colorScheme.primary,
+              ),
+              onPressed: () {
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+              },
+            ),
+          ],
         ),
-        Flexible(
-          flex: 4,
-          child: _buildDateTime(context: context, theme: theme, alignEnd: true),
-        ),
-        const SizedBox(width: 6),
-        IconButton(
-          tooltip: 'Ajustes',
-          icon: Icon(
-            Icons.settings_outlined,
-            size: 22,
-            color: theme.colorScheme.primary,
-          ),
-          onPressed: () {
-            Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
-          },
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildName({required ThemeData theme, required double typeScale}) {
     return Row(
       children: [
-        if (appIconPath != null &&
-            appIconPath!.trim().isNotEmpty &&
-            File(appIconPath!).existsSync()) ...[
+        if (appIconPath != null && appIconPath!.trim().isNotEmpty) ...[
           Container(
             width: 42,
             height: 42,
@@ -237,9 +328,17 @@ class _Header extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
+              border: Border.all(color: Colors.transparent),
             ),
-            child: Image.file(File(appIconPath!), fit: BoxFit.cover),
+            child: Image.file(
+              File(appIconPath!),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Icon(
+                Icons.image_not_supported_outlined,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
         ],
         Expanded(
@@ -347,7 +446,7 @@ class _MoonCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
       decoration: BoxDecoration(
         color: cs.primary.withValues(alpha: 0.08),
-        border: Border.all(color: cs.outlineVariant),
+        border: Border.all(color: Colors.transparent),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -423,7 +522,7 @@ class _SpecialDayCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: cs.surfaceContainerLow,
-        border: Border.all(color: cs.outlineVariant),
+        border: Border.all(color: Colors.transparent),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -496,6 +595,10 @@ class _CycleCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final ratio = snapshot.completionRatio;
+    final totalTasks = snapshot.tasks.length;
+    final completedTasks =
+        snapshot.todayLog?.completedTaskIds.length.clamp(0, totalTasks) ?? 0;
+    final progressLabel = '${(ratio * 100).toStringAsFixed(0)}%';
 
     final archetype = MandalaArchetype.fromKey(cycle.archetype);
     final pending = snapshot.tasks
@@ -515,10 +618,11 @@ class _CycleCard extends ConsumerWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: cs.outlineVariant),
+        side: BorderSide.none,
       ),
       child: InkWell(
         onTap: () {
+          HapticFeedback.selectionClick();
           Navigator.of(
             context,
           ).push(MaterialPageRoute(builder: (_) => const CyclesPage()));
@@ -528,7 +632,7 @@ class _CycleCard extends ConsumerWidget {
           children: [
             Container(
               width: double.infinity,
-              height: 66,
+              height: 70,
               color: stripeColor,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -554,6 +658,14 @@ class _CycleCard extends ConsumerWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  if (ratio >= 1) ...[
+                    const SizedBox(width: 10),
+                    Icon(
+                      Icons.workspace_premium,
+                      color: cs.onPrimaryContainer,
+                      size: 18,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -563,6 +675,7 @@ class _CycleCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: pending.isNotEmpty
@@ -585,37 +698,56 @@ class _CycleCard extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                       ),
-                      const SizedBox(width: 10),
-                      TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0, end: ratio),
-                        duration: const Duration(milliseconds: 900),
-                        curve: Curves.easeOutCubic,
-                        builder: (context, value, child) => Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Text(
-                            '${(value * 100).toStringAsFixed(0)}%',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: value == 1
-                                  ? cs.primary
-                                  : cs.onSurfaceVariant,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
+                      const SizedBox(width: 12),
+                      _ProgressBadge(ratio: ratio, label: progressLabel),
                     ],
                   ),
                   const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _MetricChip(
+                        icon: Icons.task_alt_outlined,
+                        label: '$completedTasks/$totalTasks tareas',
+                        color: cs.primary,
+                      ),
+                      _MetricChip(
+                        icon: pending.isEmpty
+                            ? Icons.check_circle_outline
+                            : Icons.pending_actions_outlined,
+                        label: pending.isEmpty
+                            ? 'Sin pendientes'
+                            : '${pending.length} pendientes',
+                        color: pending.isEmpty ? cs.tertiary : cs.secondary,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0, end: ratio),
                     duration: const Duration(milliseconds: 900),
                     curve: Curves.easeOutCubic,
                     builder: (context, value, child) => ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: value,
-                        minHeight: 6,
-                        backgroundColor: cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
+                      child: Container(
+                        height: 10,
+                        color: cs.surfaceContainerHighest,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: value,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: value >= 1
+                                      ? [cs.tertiary, cs.primary]
+                                      : [cs.primary, cs.secondary],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -625,6 +757,7 @@ class _CycleCard extends ConsumerWidget {
                       alignment: Alignment.centerLeft,
                       child: OutlinedButton.icon(
                         onPressed: () {
+                          HapticFeedback.lightImpact();
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => const CyclesPage(),
@@ -639,12 +772,99 @@ class _CycleCard extends ConsumerWidget {
                   if ((snapshot.todayLog?.closed ?? false) == false &&
                       pending.isEmpty)
                     FilledButton(
-                      onPressed: () => ref
-                          .read(appControllerProvider.notifier)
-                          .closeTodayForActiveCycles(),
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        ref
+                            .read(appControllerProvider.notifier)
+                            .closeTodayForActiveCycles();
+                      },
                       child: const Text('Cerrar día'),
                     ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressBadge extends StatelessWidget {
+  const _ProgressBadge({required this.ratio, required this.label});
+
+  final double ratio;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return SizedBox(
+      width: 54,
+      height: 54,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: ratio),
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, _) {
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                value: value,
+                strokeWidth: 4,
+                backgroundColor: cs.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  value >= 1 ? cs.tertiary : cs.primary,
+                ),
+              ),
+              Text(
+                label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: value >= 1 ? cs.tertiary : cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MetricChip extends StatelessWidget {
+  const _MetricChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
@@ -665,25 +885,268 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 16, 0, 72),
-      child: Center(
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            SizedBox(
+              width: 90,
+              height: 76,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned(
+                    left: 10,
+                    top: 10,
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 6,
+                    top: 4,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: cs.secondary.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Icon(
+                      Icons.all_inclusive,
+                      color: cs.primary,
+                      size: 30,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(
               'Aún no tienes mandalas activos.',
               style: theme.textTheme.titleSmall?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: onCreateTap,
               icon: const Icon(Icons.add),
               label: const Text('Crear primer mandala'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardReveal extends StatelessWidget {
+  const _DashboardReveal({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final clamped = index.clamp(0, 10);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: 240 + (clamped * 35)),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, _) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * 8),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DashboardLoadingSkeleton extends StatefulWidget {
+  const _DashboardLoadingSkeleton();
+
+  @override
+  State<_DashboardLoadingSkeleton> createState() =>
+      _DashboardLoadingSkeletonState();
+}
+
+class _DashboardLoadingSkeletonState extends State<_DashboardLoadingSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final spacingScale = ResponsiveUtils.spacingScale(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color.alphaBlend(
+              cs.primary.withValues(alpha: 0.08),
+              Theme.of(context).scaffoldBackgroundColor,
+            ),
+            Theme.of(context).scaffoldBackgroundColor,
+          ],
+        ),
+      ),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final shimmerT = _controller.value;
+          return ListView(
+            padding: EdgeInsets.fromLTRB(
+              16 * spacingScale,
+              20 * spacingScale,
+              16 * spacingScale,
+              132 * spacingScale,
+            ),
+            children: [
+              _DashboardSkeletonCard(
+                shimmerT: shimmerT,
+                child: const Column(
+                  children: [
+                    _DashboardShimmerBlock(height: 24, widthFactor: 0.4),
+                    SizedBox(height: 12),
+                    _DashboardShimmerBlock(height: 14, widthFactor: 0.6),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _DashboardSkeletonCard(
+                shimmerT: shimmerT,
+                child: const Column(
+                  children: [
+                    _DashboardShimmerBlock(height: 18, widthFactor: 0.55),
+                    SizedBox(height: 10),
+                    _DashboardShimmerBlock(height: 12, widthFactor: 0.8),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _DashboardSkeletonCard(
+                shimmerT: shimmerT,
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _DashboardShimmerBlock(height: 14, widthFactor: 0.34),
+                    SizedBox(height: 12),
+                    _DashboardShimmerBlock(height: 12, widthFactor: 0.7),
+                    SizedBox(height: 8),
+                    _DashboardShimmerBlock(height: 12, widthFactor: 0.58),
+                    SizedBox(height: 8),
+                    _DashboardShimmerBlock(height: 10, widthFactor: 1),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _DashboardSkeletonCard(
+                shimmerT: shimmerT,
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _DashboardShimmerBlock(height: 14, widthFactor: 0.3),
+                    SizedBox(height: 12),
+                    _DashboardShimmerBlock(height: 12, widthFactor: 0.75),
+                    SizedBox(height: 8),
+                    _DashboardShimmerBlock(height: 12, widthFactor: 0.66),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DashboardSkeletonCard extends StatelessWidget {
+  const _DashboardSkeletonCard({required this.shimmerT, required this.child});
+
+  final double shimmerT;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final stopA = (shimmerT - 0.24).clamp(0.0, 1.0);
+    final stopB = shimmerT.clamp(0.0, 1.0);
+    final stopC = (shimmerT + 0.24).clamp(0.0, 1.0);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          begin: const Alignment(-1, -0.2),
+          end: const Alignment(1, 0.2),
+          stops: [stopA, stopB, stopC],
+          colors: [
+            cs.surfaceContainerHigh,
+            cs.surfaceContainerHighest,
+            cs.surfaceContainerHigh,
+          ],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _DashboardShimmerBlock extends StatelessWidget {
+  const _DashboardShimmerBlock({
+    required this.height,
+    required this.widthFactor,
+  });
+
+  final double height;
+  final double widthFactor;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: cs.surface.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(10),
         ),
       ),
     );
@@ -709,7 +1172,6 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final sectionTitleSize = (theme.textTheme.titleSmall?.fontSize ?? 15) - 1.2;
     final repo = ref.read(repositoryProvider);
     final saved = repo.getHomePhraseSelection();
@@ -720,7 +1182,7 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outlineVariant),
+        side: BorderSide.none,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
@@ -854,7 +1316,7 @@ class _AffirmationsCardState extends ConsumerState<_AffirmationsCard> {
                       decoration: BoxDecoration(
                         color: cs.surfaceContainerHigh,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: cs.outlineVariant),
+                        border: Border.all(color: Colors.transparent),
                       ),
                       child: Text(
                         workingText.trim().isEmpty
@@ -1235,7 +1697,7 @@ class _DiaryTodayCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: cs.outlineVariant),
+        side: BorderSide.none,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 16, 18),
@@ -1356,7 +1818,7 @@ class _MandalasSectionBand extends StatelessWidget {
           cs.surfaceContainerHigh,
         ),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: cs.primary.withValues(alpha: 0.34)),
+        border: Border.all(color: Colors.transparent),
       ),
       child: Center(
         child: Text(
@@ -1387,12 +1849,7 @@ class _CycleBadge extends StatelessWidget {
 
     return Row(
       children: [
-        Expanded(
-          child: Divider(
-            color: cs.outlineVariant.withValues(alpha: 0.65),
-            thickness: 1,
-          ),
-        ),
+        Expanded(child: Divider(color: Colors.transparent, thickness: 0)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Text(
@@ -1404,12 +1861,7 @@ class _CycleBadge extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(
-          child: Divider(
-            color: cs.outlineVariant.withValues(alpha: 0.65),
-            thickness: 1,
-          ),
-        ),
+        Expanded(child: Divider(color: Colors.transparent, thickness: 0)),
       ],
     );
   }

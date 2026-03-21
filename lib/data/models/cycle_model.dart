@@ -14,6 +14,8 @@ class CycleModel {
     required this.isActive,
     this.archetype,
     this.circle = 0,
+    this.linkedResourceFolderIds = const <String>[],
+    this.plannedStartDateKey,
   });
 
   factory CycleModel.create({
@@ -23,6 +25,8 @@ class CycleModel {
     required String sankalpa,
     String? archetype,
     int circle = 0,
+    List<String> linkedResourceFolderIds = const <String>[],
+    String? plannedStartDateKey,
   }) {
     if (duration < 1) {
       throw ArgumentError.value(duration, 'duration', 'Debe ser mayor a 0');
@@ -40,6 +44,8 @@ class CycleModel {
       isActive: false,
       archetype: archetype,
       circle: circle.clamp(0, 7),
+      linkedResourceFolderIds: linkedResourceFolderIds,
+      plannedStartDateKey: plannedStartDateKey,
     );
   }
 
@@ -57,6 +63,8 @@ class CycleModel {
   /// Clave del arquetipo mandala (nullable para compatibilidad con datos existentes).
   final String? archetype;
   final int circle; // 0..7 (0 = sin círculo)
+  final List<String> linkedResourceFolderIds;
+  final String? plannedStartDateKey; // yyyy-MM-dd
 
   double get progress =>
       duration == 0 ? 0 : (currentDay / duration).clamp(0, 1);
@@ -74,6 +82,8 @@ class CycleModel {
     bool? isActive,
     String? archetype,
     int? circle,
+    List<String>? linkedResourceFolderIds,
+    String? plannedStartDateKey,
   }) {
     return CycleModel(
       id: id ?? this.id,
@@ -88,6 +98,9 @@ class CycleModel {
       isActive: isActive ?? this.isActive,
       archetype: archetype ?? this.archetype,
       circle: (circle ?? this.circle).clamp(0, 7),
+      linkedResourceFolderIds:
+          linkedResourceFolderIds ?? this.linkedResourceFolderIds,
+      plannedStartDateKey: plannedStartDateKey ?? this.plannedStartDateKey,
     );
   }
 
@@ -105,23 +118,82 @@ class CycleModel {
       'isActive': isActive,
       'archetype': archetype,
       'circle': circle,
+      'linkedResourceFolderIds': linkedResourceFolderIds.toList(
+        growable: false,
+      ),
+      'plannedStartDateKey': plannedStartDateKey,
     };
   }
 
   factory CycleModel.fromMap(Map<dynamic, dynamic> map) {
+    final rawLinkedFolders = map['linkedResourceFolderIds'];
+    final linkedFolders = rawLinkedFolders is List
+        ? rawLinkedFolders
+              .map((id) => id.toString().trim())
+              .where((id) => id.isNotEmpty)
+              .toList(growable: false)
+        : const <String>[];
+    final plannedStartDateKey = (map['plannedStartDateKey'] as String?)?.trim();
+    final rawCircle = map['circle'];
+    final parsedCircle = rawCircle is int
+        ? rawCircle
+        : rawCircle is num
+        ? rawCircle.toInt()
+        : rawCircle is String
+        ? int.tryParse(rawCircle.trim())
+        : null;
     return CycleModel(
-      id: map['id'] as String,
-      name: map['name'] as String,
-      duration: map['duration'] as int,
-      customDuration: map['customDuration'] as bool,
-      startDay: map['startDay'] as int,
-      currentDay: map['currentDay'] as int,
-      sankalpa: map['sankalpa'] as String,
-      streakCurrent: map['streakCurrent'] as int,
-      streakMax: map['streakMax'] as int,
-      isActive: map['isActive'] as bool,
-      archetype: map['archetype'] as String?,
-      circle: ((map['circle'] as int?) ?? 0).clamp(0, 7),
+      id: _readRequiredString(map, 'id'),
+      name: _readRequiredString(map, 'name'),
+      duration: _readRequiredInt(map, 'duration'),
+      customDuration: _readRequiredBool(map, 'customDuration'),
+      startDay: _readRequiredInt(map, 'startDay'),
+      currentDay: _readRequiredInt(map, 'currentDay'),
+      sankalpa: _readRequiredString(map, 'sankalpa'),
+      streakCurrent: _readRequiredInt(map, 'streakCurrent'),
+      streakMax: _readRequiredInt(map, 'streakMax'),
+      isActive: _readRequiredBool(map, 'isActive'),
+      archetype: (map['archetype'] as String?)?.trim(),
+      circle: (parsedCircle ?? 0).clamp(0, 7),
+      linkedResourceFolderIds: linkedFolders,
+      plannedStartDateKey: plannedStartDateKey?.isEmpty == true
+          ? null
+          : plannedStartDateKey,
     );
+  }
+
+  static String _readRequiredString(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) {
+      throw FormatException('CycleModel.$key requerido');
+    }
+    final text = value.toString().trim();
+    if (text.isEmpty) {
+      throw FormatException('CycleModel.$key vacío');
+    }
+    return text;
+  }
+
+  static int _readRequiredInt(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) {
+      final parsed = int.tryParse(value.trim());
+      if (parsed != null) return parsed;
+    }
+    throw FormatException('CycleModel.$key inválido');
+  }
+
+  static bool _readRequiredBool(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1') return true;
+      if (normalized == 'false' || normalized == '0') return false;
+    }
+    throw FormatException('CycleModel.$key inválido');
   }
 }

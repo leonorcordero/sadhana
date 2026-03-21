@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/providers.dart';
+import 'package:sadhana/core/utils/date_utils.dart';
 import 'package:sadhana/core/utils/responsive_utils.dart';
 import 'package:sadhana/data/models/cycle_model.dart';
+import 'package:sadhana/data/models/mandala_resource_model.dart';
+import 'package:sadhana/data/models/mandala_template_model.dart';
 import 'package:sadhana/data/models/resource_folder_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
 import 'package:sadhana/features/cycles/domain/mandala_archetype.dart';
 import 'package:sadhana/features/resources/presentation/resources_library_page.dart';
 
 // ── Página principal ──────────────────────────────────────────────────────────
+
+enum _CycleCreateAction { mandala, tapasya, template }
 
 class CyclesPage extends ConsumerWidget {
   const CyclesPage({super.key});
@@ -19,6 +24,8 @@ class CyclesPage extends ConsumerWidget {
     final repo = ref.read(repositoryProvider);
     final spacingScale = ResponsiveUtils.spacingScale(context);
     final isNarrow = ResponsiveUtils.isNarrowPhone(context);
+    final activeCount = cycles.where((cycle) => cycle.isActive).length;
+    final plannedCount = cycles.length - activeCount;
     final folderById = <String, ResourceFolderModel>{
       for (final folder in repo.getResourceFolders()) folder.id: folder,
     };
@@ -39,97 +46,150 @@ class CyclesPage extends ConsumerWidget {
             ),
           ],
         ),
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1),
-        ),
-      ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16 * spacingScale,
-          20 * spacingScale,
-          16 * spacingScale,
-          32 * spacingScale,
-        ),
-        children: [
-          for (final cycle in cycles)
-            Padding(
-              padding: EdgeInsets.only(bottom: 12 * spacingScale),
-              child: cycle.isActive
-                  ? _ActiveMandalaCard(
-                      cycle: cycle,
-                      onRestart: () => _confirmAction(
-                        context,
-                        title: 'Reiniciar mandala',
-                        message: 'Se reiniciará al día 1 y quedará activo.',
-                        onConfirm: () => ref
-                            .read(appControllerProvider.notifier)
-                            .restartCycle(cycle.id),
-                      ),
-                      onDelete: () => _confirmAction(
-                        context,
-                        title: 'Eliminar mandala',
-                        message: 'Esta acción no se puede deshacer.',
-                        onConfirm: () => ref
-                            .read(appControllerProvider.notifier)
-                            .deleteCycle(cycle.id),
-                      ),
-                      onCircleResources: _buildCircleResourcesAction(
-                        context: context,
-                        cycle: cycle,
-                        folderById: folderById,
-                      ),
-                    )
-                  : _InactiveMandalaCard(
-                      cycle: cycle,
-                      onRestart: () => _confirmAction(
-                        context,
-                        title: 'Reiniciar mandala',
-                        message: 'Se reiniciará al día 1 y quedará activo.',
-                        onConfirm: () => ref
-                            .read(appControllerProvider.notifier)
-                            .restartCycle(cycle.id),
-                      ),
-                      onDelete: () => _confirmAction(
-                        context,
-                        title: 'Eliminar mandala',
-                        message: 'Esta acción no se puede deshacer.',
-                        onConfirm: () => ref
-                            .read(appControllerProvider.notifier)
-                            .deleteCycle(cycle.id),
-                      ),
-                      onCircleResources: _buildCircleResourcesAction(
-                        context: context,
-                        cycle: cycle,
-                        folderById: folderById,
-                      ),
-                    ),
-            ),
+        actions: [
+          PopupMenuButton<_CycleCreateAction>(
+            tooltip: 'Crear o usar plantilla',
+            icon: const Icon(Icons.add_circle_outline),
+            onSelected: (action) {
+              switch (action) {
+                case _CycleCreateAction.mandala:
+                  _showCreateSheet(context, ref, kind: _CreationKind.mandala);
+                  break;
+                case _CycleCreateAction.tapasya:
+                  _showCreateSheet(context, ref, kind: _CreationKind.tapasya);
+                  break;
+                case _CycleCreateAction.template:
+                  _openTemplatesPage(context, ref);
+                  break;
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: _CycleCreateAction.mandala,
+                child: Text('Crear mandala'),
+              ),
+              PopupMenuItem(
+                value: _CycleCreateAction.tapasya,
+                child: Text('Crear tapasya'),
+              ),
+              PopupMenuItem(
+                value: _CycleCreateAction.template,
+                child: Text('Usar plantilla'),
+              ),
+            ],
+          ),
         ],
       ),
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: 74 * spacingScale),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color.alphaBlend(
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                Theme.of(context).scaffoldBackgroundColor,
+              ),
+              Theme.of(context).scaffoldBackgroundColor,
+            ],
+          ),
+        ),
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            16 * spacingScale,
+            20 * spacingScale,
+            16 * spacingScale,
+            32 * spacingScale,
+          ),
           children: [
-            FloatingActionButton.extended(
-              heroTag: 'create_mandala_fab',
-              tooltip: 'Crear Mandala',
-              onPressed: () =>
-                  _showCreateSheet(context, ref, kind: _CreationKind.mandala),
-              icon: const Icon(Icons.add),
-              label: const Text('Mandala'),
+            _CycleOverviewCard(
+              total: cycles.length,
+              active: activeCount,
+              planned: plannedCount,
             ),
-            SizedBox(height: 10 * spacingScale),
-            FloatingActionButton.extended(
-              heroTag: 'create_tapasya_fab',
-              tooltip: 'Crear Tapasya',
-              onPressed: () =>
-                  _showCreateSheet(context, ref, kind: _CreationKind.tapasya),
-              icon: const Icon(Icons.add),
-              label: const Text('Tapasya'),
-            ),
+            SizedBox(height: 12 * spacingScale),
+            if (cycles.isEmpty)
+              _CyclesEmptyState(
+                onCreate: () =>
+                    _showCreateSheet(context, ref, kind: _CreationKind.mandala),
+              ),
+            for (var index = 0; index < cycles.length; index++)
+              Padding(
+                padding: EdgeInsets.only(bottom: 12 * spacingScale),
+                child: _StaggeredReveal(
+                  index: index,
+                  child: () {
+                    final cycle = cycles[index];
+                    return cycle.isActive
+                        ? _ActiveMandalaCard(
+                            cycle: cycle,
+                            onRestart: () => _confirmAction(
+                              context,
+                              title: 'Reiniciar mandala',
+                              message:
+                                  'Se reiniciará al día 1 y quedará activo.',
+                              onConfirm: () => ref
+                                  .read(appControllerProvider.notifier)
+                                  .restartCycle(cycle.id),
+                            ),
+                            onDelete: () => _confirmAction(
+                              context,
+                              title: 'Eliminar mandala',
+                              message: 'Esta acción no se puede deshacer.',
+                              onConfirm: () => ref
+                                  .read(appControllerProvider.notifier)
+                                  .deleteCycle(cycle.id),
+                            ),
+                            onCircleResources: _buildCircleResourcesAction(
+                              context: context,
+                              cycle: cycle,
+                              folderById: folderById,
+                            ),
+                            onEditResources: () =>
+                                _openCycleResourcesEditor(context, ref, cycle),
+                            onOrderTasks: () =>
+                                _openCycleTasksOrderEditor(context, ref, cycle),
+                          )
+                        : _InactiveMandalaCard(
+                            cycle: cycle,
+                            onStart: () => ref
+                                .read(appControllerProvider.notifier)
+                                .startCycle(cycle.id),
+                            onEditMandala: () => _openScheduledMandalaEditor(
+                              context,
+                              ref,
+                              cycle,
+                            ),
+                            onRestart: () => _confirmAction(
+                              context,
+                              title: 'Reiniciar mandala',
+                              message:
+                                  'Se reiniciará al día 1 y quedará activo.',
+                              onConfirm: () => ref
+                                  .read(appControllerProvider.notifier)
+                                  .restartCycle(cycle.id),
+                            ),
+                            onDelete: () => _confirmAction(
+                              context,
+                              title: 'Eliminar mandala',
+                              message: 'Esta acción no se puede deshacer.',
+                              onConfirm: () => ref
+                                  .read(appControllerProvider.notifier)
+                                  .deleteCycle(cycle.id),
+                            ),
+                            onCircleResources: _buildCircleResourcesAction(
+                              context: context,
+                              cycle: cycle,
+                              folderById: folderById,
+                            ),
+                            onEditResources: () =>
+                                _openCycleResourcesEditor(context, ref, cycle),
+                            onOrderTasks: () =>
+                                _openCycleTasksOrderEditor(context, ref, cycle),
+                          );
+                  }(),
+                ),
+              ),
           ],
         ),
       ),
@@ -141,14 +201,28 @@ class CyclesPage extends ConsumerWidget {
     required CycleModel cycle,
     required Map<String, ResourceFolderModel> folderById,
   }) {
-    final circle = _circleForArchetype(cycle.archetype);
-    if (circle == null) return null;
-    final folderId = 'recursos-circulos-circle-$circle';
-    final folder = folderById[folderId];
+    var circle = cycle.circle > 0 ? cycle.circle : null;
+    circle ??= _circleForArchetype(cycle.archetype);
+    ResourceFolderModel? folder;
+    if (circle != null) {
+      final folderId = 'recursos-circulos-circle-$circle';
+      folder = folderById[folderId];
+      folder ??= folderById.values
+          .where((item) => item.circle == circle)
+          .firstOrNull;
+    }
+    folder ??= cycle.linkedResourceFolderIds
+        .map((id) => folderById[id])
+        .whereType<ResourceFolderModel>()
+        .where((item) => item.circle > 0)
+        .firstOrNull;
     if (folder == null) return null;
+    final resolvedFolder = folder;
     return () {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ResourceFolderPage(folder: folder)),
+        MaterialPageRoute(
+          builder: (_) => ResourceFolderPage(folder: resolvedFolder),
+        ),
       );
     };
   }
@@ -159,13 +233,31 @@ class CyclesPage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref, {
     _CreationKind kind = _CreationKind.mandala,
+    MandalaTemplateModel? initialTemplate,
   }) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _CreateCycleSheet(ref: ref, kind: kind),
+      builder: (_) => _CreateCycleSheet(
+        ref: ref,
+        kind: kind,
+        initialTemplate: initialTemplate,
+      ),
+    );
+  }
+
+  Future<void> _openTemplatesPage(BuildContext context, WidgetRef ref) async {
+    final template = await Navigator.of(context).push<MandalaTemplateModel>(
+      MaterialPageRoute(builder: (_) => const _MandalaTemplatesPage()),
+    );
+    if (template == null || !context.mounted) return;
+    await _showCreateSheet(
+      context,
+      ref,
+      kind: _CreationKind.mandala,
+      initialTemplate: template,
     );
   }
 
@@ -203,22 +295,594 @@ class CyclesPage extends ConsumerWidget {
       }
     }
   }
+
+  Future<void> _openCycleResourcesEditor(
+    BuildContext context,
+    WidgetRef ref,
+    CycleModel cycle,
+  ) async {
+    final repo = ref.read(repositoryProvider);
+    final allFolders = repo.getResourceFolders().toList(growable: false)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final folderNameById = <String, String>{
+      for (final folder in allFolders) folder.id: folder.name,
+    };
+    final allResources = repo.getMandalaResources();
+    final resourcesByType = <MandalaResourceType, List<MandalaResourceModel>>{};
+    for (final item in allResources) {
+      resourcesByType.putIfAbsent(item.type, () => <MandalaResourceModel>[]);
+      resourcesByType[item.type]!.add(item);
+    }
+    for (final list in resourcesByType.values) {
+      list.sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
+    }
+
+    final tasks = ref
+        .read(appControllerProvider)
+        .tasks
+        .where((t) => t.cycleId == cycle.id)
+        .toList(growable: false);
+
+    final selectedFolders = Set<String>.from(cycle.linkedResourceFolderIds);
+    final selectedByTask = <String, Set<String>>{
+      for (final t in tasks) t.id: Set<String>.from(t.linkedResourceIds),
+    };
+
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          title: Text('Editar recursos: ${_normalizedMandalaName(cycle.name)}'),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Carpetas vinculadas',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  for (final folder in allFolders)
+                    CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      value: selectedFolders.contains(folder.id),
+                      onChanged: (value) {
+                        setLocalState(() {
+                          if (value == true) {
+                            selectedFolders.add(folder.id);
+                          } else {
+                            selectedFolders.remove(folder.id);
+                          }
+                        });
+                      },
+                      title: Text(folder.name),
+                      subtitle: Text(
+                        folder.circle <= 0
+                            ? 'Sin círculo'
+                            : 'Círculo ${folder.circle}',
+                      ),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Recursos por tarea',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  for (final task in tasks) ...[
+                    Text(
+                      _normalizedTaskTitle(task.title),
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    for (final type in MandalaResourceType.values)
+                      if ((resourcesByType[type] ??
+                              const <MandalaResourceModel>[])
+                          .isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 2),
+                          child: Text(
+                            _resourceTypeLabel(type),
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                        ),
+                        for (final item in resourcesByType[type]!)
+                          CheckboxListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            value: selectedByTask[task.id]!.contains(item.id),
+                            onChanged: (value) {
+                              setLocalState(() {
+                                if (value == true) {
+                                  selectedByTask[task.id]!.add(item.id);
+                                } else {
+                                  selectedByTask[task.id]!.remove(item.id);
+                                }
+                              });
+                            },
+                            title: Text(item.title),
+                            subtitle: Text(
+                              folderNameById[item.folderId] ?? 'Sin carpeta',
+                            ),
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
+                      ],
+                    const SizedBox(height: 8),
+                    const SizedBox(height: 16),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (save != true) return;
+
+    await ref
+        .read(appControllerProvider.notifier)
+        .updateCycle(
+          cycle.copyWith(
+            linkedResourceFolderIds: selectedFolders.toList(growable: false),
+          ),
+        );
+    for (final task in tasks) {
+      await ref
+          .read(appControllerProvider.notifier)
+          .updateTask(
+            task.copyWith(
+              linkedResourceIds: selectedByTask[task.id]!.toList(
+                growable: false,
+              ),
+            ),
+          );
+    }
+  }
+
+  Future<void> _openCycleTasksOrderEditor(
+    BuildContext context,
+    WidgetRef ref,
+    CycleModel cycle,
+  ) async {
+    final tasks = ref
+        .read(appControllerProvider)
+        .tasks
+        .where((t) => t.cycleId == cycle.id)
+        .toList(growable: true);
+    if (tasks.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Se necesitan al menos 2 tareas.')),
+      );
+      return;
+    }
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          title: const Text('Ordenar tareas'),
+          content: SizedBox(
+            width: 420,
+            height: 360,
+            child: ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              itemCount: tasks.length,
+              onReorder: (oldIndex, newIndex) {
+                setLocalState(() {
+                  if (newIndex > oldIndex) newIndex -= 1;
+                  final moved = tasks.removeAt(oldIndex);
+                  tasks.insert(newIndex, moved);
+                });
+              },
+              itemBuilder: (context, index) {
+                final task = tasks[index];
+                return ListTile(
+                  key: ValueKey(task.id),
+                  dense: true,
+                  title: Text(_normalizedTaskTitle(task.title)),
+                  trailing: ReorderableDragStartListener(
+                    index: index,
+                    child: const Icon(Icons.drag_handle),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (save != true) return;
+    await ref
+        .read(appControllerProvider.notifier)
+        .saveTaskOrderForCycle(
+          cycle.id,
+          tasks.map((task) => task.id).toList(growable: false),
+        );
+  }
+
+  Future<void> _openScheduledMandalaEditor(
+    BuildContext context,
+    WidgetRef ref,
+    CycleModel cycle,
+  ) async {
+    final nameCtrl = TextEditingController(text: cycle.name);
+    final sankalpaCtrl = TextEditingController(text: cycle.sankalpa);
+    final durationCtrl = TextEditingController(text: '${cycle.duration}');
+    DateTime planned;
+    final raw = cycle.plannedStartDateKey?.trim();
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        planned = DateUtilsX.fromDateKey(raw);
+      } catch (_) {
+        final now = DateTime.now();
+        planned = DateTime(now.year, now.month, now.day);
+      }
+    } else {
+      final now = DateTime.now();
+      planned = DateTime(now.year, now.month, now.day);
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          title: const Text('Editar mandala programado'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Nombre'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: sankalpaCtrl,
+                    maxLines: 2,
+                    decoration: const InputDecoration(labelText: 'Sankalpa'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: durationCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Duración'),
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        final picked = await showDatePicker(
+                          context: ctx,
+                          initialDate: planned,
+                          firstDate: DateTime(now.year - 2, 1, 1),
+                          lastDate: DateTime(now.year + 5, 12, 31),
+                        );
+                        if (picked == null) return;
+                        setLocalState(() {
+                          planned = DateTime(
+                            picked.year,
+                            picked.month,
+                            picked.day,
+                          );
+                        });
+                      },
+                      icon: const Icon(Icons.event_outlined),
+                      label: Text('Inicio: ${_formatDate(planned)}'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved != true) return;
+
+    final duration = int.tryParse(durationCtrl.text.trim()) ?? cycle.duration;
+    final normalizedDuration = duration < 1 ? cycle.duration : duration;
+    final updated = cycle.copyWith(
+      name: nameCtrl.text.trim().isEmpty ? cycle.name : nameCtrl.text.trim(),
+      sankalpa: sankalpaCtrl.text.trim().isEmpty
+          ? cycle.sankalpa
+          : sankalpaCtrl.text.trim(),
+      duration: normalizedDuration,
+      plannedStartDateKey: DateUtilsX.dateKey(planned),
+    );
+    await ref.read(appControllerProvider.notifier).updateCycle(updated);
+  }
+
+  String _resourceTypeLabel(MandalaResourceType type) {
+    switch (type) {
+      case MandalaResourceType.audio:
+        return 'Audios';
+      case MandalaResourceType.image:
+        return 'Imágenes';
+      case MandalaResourceType.text:
+        return 'Textos';
+      case MandalaResourceType.pdf:
+        return 'PDF';
+      case MandalaResourceType.other:
+        return 'Otros';
+    }
+  }
+}
+
+class _CycleOverviewCard extends StatelessWidget {
+  const _CycleOverviewCard({
+    required this.total,
+    required this.active,
+    required this.planned,
+  });
+
+  final int total;
+  final int active;
+  final int planned;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Vista general',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Mantén el control de tus ciclos activos y programados.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _OverviewStatChip(
+                  label: 'Total',
+                  value: '$total',
+                  color: cs.primary,
+                ),
+                _OverviewStatChip(
+                  label: 'Activos',
+                  value: '$active',
+                  color: const Color(0xFF2E7D32),
+                ),
+                _OverviewStatChip(
+                  label: 'Programados',
+                  value: '$planned',
+                  color: const Color(0xFF1565C0),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewStatChip extends StatelessWidget {
+  const _OverviewStatChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+          children: [
+            TextSpan(text: '$label: '),
+            TextSpan(
+              text: value,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CyclesEmptyState extends StatelessWidget {
+  const _CyclesEmptyState({required this.onCreate});
+
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+        child: Column(
+          children: [
+            SizedBox(
+              width: 82,
+              height: 70,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 6,
+                    top: 2,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: cs.secondary.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(
+                      Icons.self_improvement_outlined,
+                      color: cs.primary,
+                      size: 28,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Aún no tienes mandalas',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Crea tu primer ciclo para comenzar la práctica.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onCreate,
+              icon: const Icon(Icons.add),
+              label: const Text('Comenzar ciclo'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StaggeredReveal extends StatelessWidget {
+  const _StaggeredReveal({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final clamped = index.clamp(0, 8);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: 240 + (clamped * 40)),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, _) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * 10),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
 }
 
 // ── Tarjeta de mandala activo (expandida, con tareas) ─────────────────────────
-
 class _ActiveMandalaCard extends ConsumerWidget {
   const _ActiveMandalaCard({
     required this.cycle,
     required this.onRestart,
     required this.onDelete,
     this.onCircleResources,
+    this.onEditResources,
+    this.onOrderTasks,
   });
 
   final CycleModel cycle;
   final VoidCallback onRestart;
   final VoidCallback onDelete;
   final VoidCallback? onCircleResources;
+  final VoidCallback? onEditResources;
+  final VoidCallback? onOrderTasks;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -241,10 +905,7 @@ class _ActiveMandalaCard extends ConsumerWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: cs.outlineVariant),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -387,7 +1048,7 @@ class _ActiveMandalaCard extends ConsumerWidget {
                 // Lista de tareas
                 if (snapshot.tasks.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  const Divider(height: 1),
+                  const SizedBox(height: 8),
                   for (final task in snapshot.tasks)
                     _TaskTile(
                       task: task,
@@ -420,6 +1081,22 @@ class _ActiveMandalaCard extends ConsumerWidget {
                         onPressed: onCircleResources,
                         icon: const Icon(Icons.hub_outlined, size: 16),
                         label: const Text('Recursos círculo'),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    if (onEditResources != null) ...[
+                      TextButton.icon(
+                        onPressed: onEditResources,
+                        icon: const Icon(Icons.folder_open_outlined, size: 16),
+                        label: const Text('Recursos'),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    if (onOrderTasks != null) ...[
+                      TextButton.icon(
+                        onPressed: onOrderTasks,
+                        icon: const Icon(Icons.reorder_outlined, size: 16),
+                        label: const Text('Ordenar'),
                       ),
                       const SizedBox(width: 4),
                     ],
@@ -483,15 +1160,23 @@ class _ActiveMandalaCard extends ConsumerWidget {
 class _InactiveMandalaCard extends StatelessWidget {
   const _InactiveMandalaCard({
     required this.cycle,
+    required this.onStart,
+    required this.onEditMandala,
     required this.onRestart,
     required this.onDelete,
     this.onCircleResources,
+    this.onEditResources,
+    this.onOrderTasks,
   });
 
   final CycleModel cycle;
+  final VoidCallback onStart;
+  final VoidCallback onEditMandala;
   final VoidCallback onRestart;
   final VoidCallback onDelete;
   final VoidCallback? onCircleResources;
+  final VoidCallback? onEditResources;
+  final VoidCallback? onOrderTasks;
 
   @override
   Widget build(BuildContext context) {
@@ -500,22 +1185,35 @@ class _InactiveMandalaCard extends StatelessWidget {
     final archetype = MandalaArchetype.fromKey(cycle.archetype);
     final displayName = _normalizedMandalaName(cycle.name);
     final range = _cycleDateRange(cycle);
-    final sideColor =
-        archetype?.softHeaderColor(cs) ?? cs.primary.withValues(alpha: 0.22);
+    String? plannedStartText;
+    final rawPlanned = cycle.plannedStartDateKey?.trim();
+    if (rawPlanned != null && rawPlanned.isNotEmpty) {
+      try {
+        final planned = DateUtilsX.fromDateKey(rawPlanned);
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final normalizedPlanned = DateTime(
+          planned.year,
+          planned.month,
+          planned.day,
+        );
+        if (normalizedPlanned.isAfter(today)) {
+          plannedStartText =
+              'Programado para iniciar el ${_formatDate(normalizedPlanned)}';
+        }
+      } catch (_) {
+        plannedStartText = null;
+      }
+    }
 
     return Card(
       clipBehavior: Clip.antiAlias,
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: cs.outlineVariant),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Barra lateral de color
-            if (archetype != null) Container(width: 5, color: sideColor),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -564,12 +1262,47 @@ class _InactiveMandalaCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                          if (plannedStartText != null)
+                            Text(
+                              plannedStartText,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                         ],
                       ),
                     ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          tooltip: 'Iniciar',
+                          onPressed: onStart,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          tooltip: 'Editar mandala',
+                          onPressed: onEditMandala,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        if (onEditResources != null)
+                          IconButton(
+                            icon: const Icon(Icons.folder_open_outlined),
+                            tooltip: 'Editar recursos',
+                            onPressed: onEditResources,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (onOrderTasks != null)
+                          IconButton(
+                            icon: const Icon(Icons.reorder_outlined),
+                            tooltip: 'Ordenar tareas',
+                            onPressed: onOrderTasks,
+                            visualDensity: VisualDensity.compact,
+                          ),
                         if (onCircleResources != null)
                           IconButton(
                             icon: const Icon(Icons.hub_outlined),
@@ -786,9 +1519,11 @@ class _CreateCycleSheet extends StatefulWidget {
   const _CreateCycleSheet({
     required this.ref,
     this.kind = _CreationKind.mandala,
+    this.initialTemplate,
   });
   final WidgetRef ref;
   final _CreationKind kind;
+  final MandalaTemplateModel? initialTemplate;
 
   @override
   State<_CreateCycleSheet> createState() => _CreateCycleSheetState();
@@ -826,6 +1561,32 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
     _defaultTaskCommentControllers = {
       for (final title in _defaultTaskTitles) title: TextEditingController(),
     };
+
+    final template = widget.initialTemplate;
+    if (template == null) return;
+
+    _sankalpaController.text = template.sankalpa;
+    _selectedDuration = template.duration;
+    _showCustomDuration = template.customDuration;
+    if (template.customDuration) {
+      _customDurationController.text = '${template.duration}';
+    }
+
+    final options = widget.kind == _CreationKind.tapasya
+        ? MandalaArchetype.tapasyaOptions
+        : MandalaArchetype.mandalaOptions;
+    _selectedArchetype = _findArchetypeByKey(options, template.archetype);
+
+    _pendingTasks.addAll(
+      template.tasks.map(
+        (task) => (
+          title: task.title,
+          description: task.description?.trim().isEmpty == true
+              ? null
+              : task.description?.trim(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -856,18 +1617,6 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag handle
-          Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 4),
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: cs.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
           // Header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -885,7 +1634,7 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
               ],
             ),
           ),
-          const Divider(height: 1),
+          const SizedBox(height: 8),
           // Contenido scrollable
           Flexible(
             child: SingleChildScrollView(
@@ -975,7 +1724,6 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
                           padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerHigh,
-                            border: Border.all(color: cs.outlineVariant),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Column(
@@ -1181,6 +1929,18 @@ class _CreateCycleSheetState extends State<_CreateCycleSheet> {
       ),
     );
   }
+
+  MandalaArchetype? _findArchetypeByKey(
+    List<MandalaArchetype> options,
+    String? raw,
+  ) {
+    final normalized = raw?.trim();
+    if (normalized == null || normalized.isEmpty) return null;
+    for (final option in options) {
+      if (option.key == normalized) return option;
+    }
+    return null;
+  }
 }
 
 // ── Etiqueta de sección ───────────────────────────────────────────────────────
@@ -1258,12 +2018,6 @@ class _ArchetypeCard extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: archetype.gradient,
             borderRadius: BorderRadius.circular(14),
-            border: isSelected
-                ? Border.all(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    width: 2.5,
-                  )
-                : null,
             boxShadow: isSelected
                 ? [
                     BoxShadow(
@@ -1371,6 +2125,78 @@ class _DurationSelector extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _MandalaTemplatesPage extends ConsumerStatefulWidget {
+  const _MandalaTemplatesPage();
+
+  @override
+  ConsumerState<_MandalaTemplatesPage> createState() =>
+      _MandalaTemplatesPageState();
+}
+
+class _MandalaTemplatesPageState extends ConsumerState<_MandalaTemplatesPage> {
+  String _kind = 'mandala';
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = ref.read(repositoryProvider);
+    final templates = repo.getMandalaTemplates(kind: _kind);
+    final title = _kind == 'mandala' ? 'Plantillas de mandala' : 'Plantillas';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Tipo',
+            initialValue: _kind,
+            onSelected: (value) => setState(() => _kind = value),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'mandala', child: Text('Mandalas')),
+              PopupMenuItem(value: 'tapasya', child: Text('Tapasyas')),
+            ],
+            icon: const Icon(Icons.filter_list),
+          ),
+        ],
+      ),
+      body: templates.isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Aún no hay plantillas guardadas.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              itemCount: templates.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final template = templates[index];
+                return Card(
+                  child: ListTile(
+                    onTap: () => Navigator.of(context).pop(template),
+                    title: Text(template.name),
+                    subtitle: Text(
+                      '${template.duration} días · ${template.tasks.length} tareas',
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: 'Eliminar plantilla',
+                      onPressed: () async {
+                        await repo.deleteMandalaTemplate(template.id);
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }

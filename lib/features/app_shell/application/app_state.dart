@@ -9,6 +9,7 @@ class AppState {
     required this.logs,
     required this.selectedDate,
     required this.error,
+    required this.isLoading,
   });
 
   factory AppState.initial() {
@@ -19,6 +20,7 @@ class AppState {
       logs: const [],
       selectedDate: DateTime(now.year, now.month, now.day),
       error: null,
+      isLoading: true,
     );
   }
 
@@ -27,6 +29,7 @@ class AppState {
   final List<DayLogModel> logs;
   final DateTime selectedDate;
   final String? error;
+  final bool isLoading;
 
   List<CycleModel> get activeCycles => cycles.where((c) => c.isActive).toList();
 
@@ -38,6 +41,7 @@ class AppState {
     List<DayLogModel>? logs,
     DateTime? selectedDate,
     String? error,
+    bool? isLoading,
     bool clearError = false,
   }) {
     return AppState(
@@ -46,6 +50,7 @@ class AppState {
       logs: logs ?? this.logs,
       selectedDate: selectedDate ?? this.selectedDate,
       error: clearError ? null : error ?? this.error,
+      isLoading: isLoading ?? this.isLoading,
     );
   }
 }

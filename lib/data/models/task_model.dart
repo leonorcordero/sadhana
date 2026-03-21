@@ -7,12 +7,14 @@ class TaskModel {
     required this.title,
     this.description,
     required this.isActive,
+    this.linkedResourceIds = const <String>[],
   });
 
   factory TaskModel.create({
     required String cycleId,
     required String title,
     String? description,
+    List<String> linkedResourceIds = const <String>[],
   }) {
     return TaskModel(
       id: const Uuid().v4(),
@@ -20,6 +22,7 @@ class TaskModel {
       title: title,
       description: description,
       isActive: true,
+      linkedResourceIds: linkedResourceIds,
     );
   }
 
@@ -28,6 +31,7 @@ class TaskModel {
   final String title;
   final String? description;
   final bool isActive;
+  final List<String> linkedResourceIds;
 
   TaskModel copyWith({
     String? id,
@@ -35,6 +39,7 @@ class TaskModel {
     String? title,
     String? description,
     bool? isActive,
+    List<String>? linkedResourceIds,
   }) {
     return TaskModel(
       id: id ?? this.id,
@@ -42,6 +47,7 @@ class TaskModel {
       title: title ?? this.title,
       description: description ?? this.description,
       isActive: isActive ?? this.isActive,
+      linkedResourceIds: linkedResourceIds ?? this.linkedResourceIds,
     );
   }
 
@@ -52,16 +58,46 @@ class TaskModel {
       'title': title,
       'description': description,
       'isActive': isActive,
+      'linkedResourceIds': linkedResourceIds.toList(growable: false),
     };
   }
 
   factory TaskModel.fromMap(Map<dynamic, dynamic> map) {
+    final rawLinked = map['linkedResourceIds'];
+    final linked = rawLinked is List
+        ? rawLinked
+              .map((id) => id.toString().trim())
+              .where((id) => id.isNotEmpty)
+              .toList(growable: false)
+        : const <String>[];
+    final rawIsActive = map['isActive'];
+    final isActive = rawIsActive is bool
+        ? rawIsActive
+        : rawIsActive is num
+        ? rawIsActive != 0
+        : rawIsActive is String
+        ? (rawIsActive.trim().toLowerCase() == 'true' ||
+              rawIsActive.trim() == '1')
+        : true;
     return TaskModel(
-      id: map['id'] as String,
-      cycleId: map['cycleId'] as String,
-      title: map['title'] as String,
+      id: _readRequiredString(map, 'id'),
+      cycleId: _readRequiredString(map, 'cycleId'),
+      title: _readRequiredString(map, 'title'),
       description: map['description'] as String?,
-      isActive: map['isActive'] as bool,
+      isActive: isActive,
+      linkedResourceIds: linked,
     );
+  }
+
+  static String _readRequiredString(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) {
+      throw FormatException('TaskModel.$key requerido');
+    }
+    final text = value.toString().trim();
+    if (text.isEmpty) {
+      throw FormatException('TaskModel.$key vacío');
+    }
+    return text;
   }
 }

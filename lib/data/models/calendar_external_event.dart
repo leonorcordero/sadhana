@@ -58,13 +58,25 @@ class CalendarExternalEvent {
 
   factory CalendarExternalEvent.fromMap(Map<dynamic, dynamic> map) {
     return CalendarExternalEvent(
-      id: map['id'] as String,
-      title: map['title'] as String,
+      id: _readRequiredString(map, 'id'),
+      title: _readRequiredString(map, 'title'),
       description: map['description'] as String?,
-      dateKey: map['dateKey'] as String,
+      dateKey: _readRequiredString(map, 'dateKey'),
       sourceLabel: (map['sourceLabel'] as String?)?.trim().isNotEmpty == true
           ? map['sourceLabel'] as String
           : 'Google Calendar',
     );
+  }
+
+  static String _readRequiredString(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) {
+      throw FormatException('CalendarExternalEvent.$key requerido');
+    }
+    final text = value.toString().trim();
+    if (text.isEmpty) {
+      throw FormatException('CalendarExternalEvent.$key vacío');
+    }
+    return text;
   }
 }

@@ -78,7 +78,7 @@ class _ResourcesPageState extends ConsumerState<ResourcesPage> {
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: cs.outlineVariant),
+                    side: BorderSide.none,
                   ),
                   child: ListTile(
                     onTap: () => Navigator.of(context).push(
@@ -89,10 +89,20 @@ class _ResourcesPageState extends ConsumerState<ResourcesPage> {
                     leading: Icon(_iconForType(item.type)),
                     title: Text(item.title),
                     subtitle: Text(_typeLabel(item.type)),
-                    trailing: IconButton(
-                      tooltip: 'Eliminar',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _deleteItem(item),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Renombrar',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _renameItem(item),
+                        ),
+                        IconButton(
+                          tooltip: 'Eliminar',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _deleteItem(item),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -319,6 +329,37 @@ class _ResourcesPageState extends ConsumerState<ResourcesPage> {
     }
     _reload();
   }
+
+  Future<void> _renameItem(MandalaResourceModel item) async {
+    final titleCtrl = TextEditingController(text: item.title);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Renombrar recurso'),
+        content: TextField(
+          controller: titleCtrl,
+          decoration: const InputDecoration(labelText: 'Nombre'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final name = titleCtrl.text.trim();
+    if (name.isEmpty || name == item.title) return;
+
+    final repo = ref.read(repositoryProvider);
+    await repo.saveMandalaResource(item.copyWith(title: name));
+    _reload();
+  }
 }
 
 class ResourceViewerPage extends ConsumerStatefulWidget {
@@ -333,6 +374,9 @@ class ResourceViewerPage extends ConsumerStatefulWidget {
 class _ResourceViewerPageState extends ConsumerState<ResourceViewerPage> {
   String? _textContent;
   String? _error;
+  List<MandalaResourceModel> _imageGallery = const <MandalaResourceModel>[];
+  int _currentImageIndex = 0;
+  PageController? _imagePageController;
 
   @override
   void initState() {
@@ -342,6 +386,19 @@ class _ResourceViewerPageState extends ConsumerState<ResourceViewerPage> {
 
   Future<void> _init() async {
     try {
+      if (widget.resource.type == MandalaResourceType.image) {
+        final repo = ref.read(repositoryProvider);
+        final imageItems = repo
+            .getMandalaResourcesForFolderOrdered(widget.resource.folderId)
+            .where((item) => item.type == MandalaResourceType.image)
+            .toList(growable: false);
+        final index = imageItems.indexWhere((r) => r.id == widget.resource.id);
+        _imageGallery = imageItems;
+        _currentImageIndex = index >= 0 ? index : 0;
+        _imagePageController = PageController(initialPage: _currentImageIndex);
+        setState(() {});
+        return;
+      }
       if (widget.resource.type == MandalaResourceType.text) {
         if ((widget.resource.inlineText ?? '').trim().isNotEmpty) {
           _textContent = widget.resource.inlineText!.trim();
@@ -365,12 +422,27 @@ class _ResourceViewerPageState extends ConsumerState<ResourceViewerPage> {
   }
 
   @override
+  void dispose() {
+    _imagePageController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final r = widget.resource;
+    final title = _currentImageTitle(r);
     return Scaffold(
-      appBar: AppBar(title: Text(r.title)),
+      appBar: AppBar(title: Text(title)),
       body: Padding(padding: const EdgeInsets.all(16), child: _buildContent(r)),
     );
+  }
+
+  String _currentImageTitle(MandalaResourceModel fallback) {
+    if (_imageGallery.isEmpty) return fallback.title;
+    if (_currentImageIndex < 0 || _currentImageIndex >= _imageGallery.length) {
+      return fallback.title;
+    }
+    return _imageGallery[_currentImageIndex].title;
   }
 
   Widget _buildContent(MandalaResourceModel r) {
@@ -384,14 +456,96 @@ class _ResourceViewerPageState extends ConsumerState<ResourceViewerPage> {
         }
         return SingleChildScrollView(child: SelectableText(_textContent!));
       case MandalaResourceType.image:
+        if (_imageGallery.isNotEmpty && _imagePageController != null) {
+          return Column(
+            children: [
+              Expanded(
+                child: PageView.builder(
+                  controller: _imagePageController,
+                  itemCount: _imageGallery.length,
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentImageIndex = index;
+                    });
+                  },
+                  itemBuilder: (context, index) {
+                    final item = _imageGallery[index];
+                    final path = item.filePath;
+                    if (path == null || path.isEmpty) {
+                      return const Center(child: Text('Imagen no disponible'));
+                    }
+                    return InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: Center(child: _buildImageByPath(path)),
+                    );
+                  },
+                ),
+              ),
+              if (_imageGallery.length > 1) ...[
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      onPressed: _currentImageIndex <= 0
+                          ? null
+                          : () => _goToImage(_currentImageIndex - 1),
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    Text('${_currentImageIndex + 1}/${_imageGallery.length}'),
+                    IconButton(
+                      onPressed: _currentImageIndex >= _imageGallery.length - 1
+                          ? null
+                          : () => _goToImage(_currentImageIndex + 1),
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 74,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _imageGallery.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      final item = _imageGallery[index];
+                      final path = item.filePath;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => _goToImage(index),
+                        child: Container(
+                          width: 74,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.transparent),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: path == null || path.isEmpty
+                              ? const Center(
+                                  child: Icon(
+                                    Icons.image_not_supported_outlined,
+                                  ),
+                                )
+                              : _buildThumbnailByPath(path),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
+          );
+        }
         final path = r.filePath;
-        if (path == null) {
+        if (path == null || path.isEmpty) {
           return const Center(child: Text('Imagen no disponible'));
         }
         return InteractiveViewer(
           minScale: 0.8,
           maxScale: 4.0,
-          child: Center(child: Image.file(File(path))),
+          child: Center(child: _buildImageByPath(path)),
         );
       case MandalaResourceType.pdf:
         final path = r.filePath;
@@ -407,6 +561,55 @@ class _ResourceViewerPageState extends ConsumerState<ResourceViewerPage> {
           ),
         );
     }
+  }
+
+  void _goToImage(int index) {
+    if (_imagePageController == null) return;
+    _imagePageController!.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  Widget _buildImageByPath(String path) {
+    if (_isWebUrl(path)) {
+      return Image.network(
+        path,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) =>
+            const Center(child: Text('No se pudo cargar la imagen')),
+      );
+    }
+    return Image.file(
+      File(path),
+      fit: BoxFit.contain,
+      errorBuilder: (_, _, _) =>
+          const Center(child: Text('No se pudo cargar la imagen')),
+    );
+  }
+
+  Widget _buildThumbnailByPath(String path) {
+    if (_isWebUrl(path)) {
+      return Image.network(
+        path,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) =>
+            const Center(child: Icon(Icons.broken_image_outlined, size: 20)),
+      );
+    }
+    return Image.file(
+      File(path),
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) =>
+          const Center(child: Icon(Icons.broken_image_outlined, size: 20)),
+    );
+  }
+
+  bool _isWebUrl(String value) {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null) return false;
+    return uri.scheme == 'http' || uri.scheme == 'https';
   }
 }
 
@@ -541,9 +744,7 @@ class _SharedAudioPlayerViewState
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
+                      border: Border.all(color: Colors.transparent),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -626,7 +827,7 @@ class _RepeatModeChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? cs.primary.withValues(alpha: 0.14) : cs.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? cs.primary : cs.outlineVariant),
+          border: Border.all(color: Colors.transparent),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

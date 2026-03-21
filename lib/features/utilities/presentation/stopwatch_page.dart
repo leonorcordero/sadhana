@@ -176,7 +176,7 @@ class _StopwatchPageState extends ConsumerState<StopwatchPage> {
                   label: Text(_state.isRunning ? 'Pausar' : 'Iniciar'),
                 ),
                 const SizedBox(width: 10),
-                OutlinedButton.icon(
+                FilledButton.tonalIcon(
                   onPressed: _reset,
                   icon: const Icon(Icons.replay),
                   label: const Text('Reset'),
@@ -189,12 +189,12 @@ class _StopwatchPageState extends ConsumerState<StopwatchPage> {
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: [
-                OutlinedButton.icon(
+                FilledButton.tonalIcon(
                   onPressed: _addLap,
                   icon: const Icon(Icons.flag_outlined),
                   label: const Text('Vuelta'),
                 ),
-                OutlinedButton.icon(
+                FilledButton.tonalIcon(
                   onPressed: _saveSessionToDiary,
                   icon: const Icon(Icons.save_outlined),
                   label: const Text('Guardar en Resumen'),
@@ -208,7 +208,6 @@ class _StopwatchPageState extends ConsumerState<StopwatchPage> {
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                 decoration: BoxDecoration(
                   color: cs.surfaceContainerLow,
-                  border: Border.all(color: cs.outlineVariant),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: _laps.isEmpty
@@ -223,7 +222,7 @@ class _StopwatchPageState extends ConsumerState<StopwatchPage> {
                     : ListView.separated(
                         itemCount: _laps.length,
                         separatorBuilder: (_, index) =>
-                            const Divider(height: 8),
+                            const SizedBox(height: 8),
                         itemBuilder: (context, index) {
                           final lap = _laps[index];
                           return ListTile(

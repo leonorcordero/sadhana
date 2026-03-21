@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/services/daily_closure_service.dart';
+import 'package:sadhana/core/services/google_drive_sync_service.dart';
 import 'package:sadhana/core/services/notification_service.dart';
 import 'package:sadhana/core/settings/app_settings.dart';
 import 'package:sadhana/core/settings/app_settings_notifier.dart';
@@ -26,6 +27,13 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
 
 final dailyClosureServiceProvider = Provider<DailyClosureService>((ref) {
   return DailyClosureService();
+});
+
+final driveSyncServiceProvider = Provider<GoogleDriveSyncService>((ref) {
+  return GoogleDriveSyncService(
+    ref.read(localStorageDatasourceProvider),
+    ref.read(repositoryProvider),
+  );
 });
 
 final resourcesAudioControllerProvider = Provider<ResourcesAudioController>((
@@ -66,5 +74,6 @@ final appControllerProvider = StateNotifierProvider<AppController, AppState>((
     ref.read(repositoryProvider),
     ref.read(dailyClosureServiceProvider),
     ref.read(notificationServiceProvider),
+    ref.read(driveSyncServiceProvider),
   );
 });

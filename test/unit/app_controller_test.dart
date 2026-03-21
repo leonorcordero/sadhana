@@ -83,6 +83,12 @@ class SilentNotificationService extends NotificationService {
   Future<void> cancelDailyReminders() async {
     cancelCalled = true;
   }
+
+  @override
+  Future<void> scheduleMandalaStartReminders({
+    required List<CycleModel> cycles,
+    required bool enabled,
+  }) async {}
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -120,8 +126,16 @@ void main() {
         customDuration: false,
         sankalpa: 'Silencio interior',
         tasks: [
-          (title: 'Meditar 20 min', description: null),
-          (title: 'Journaling', description: 'Escribir 3 paginas'),
+          (
+            title: 'Meditar 20 min',
+            description: null,
+            linkedResourceIds: const <String>[],
+          ),
+          (
+            title: 'Journaling',
+            description: 'Escribir 3 paginas',
+            linkedResourceIds: const <String>[],
+          ),
         ],
       );
 
@@ -150,6 +164,165 @@ void main() {
 
       final state = container.read(appControllerProvider);
       expect(state.cycles.first.isActive, isTrue);
+    });
+
+    test('crea tareas con recursos vinculados', () async {
+      final ds = InMemoryDatasource();
+      final container = buildContainer(datasource: ds);
+      addTearDown(container.dispose);
+
+      final controller = container.read(appControllerProvider.notifier);
+      await controller.createCycle(
+        name: 'Ciclo con links',
+        duration: 21,
+        customDuration: false,
+        sankalpa: 'Persistencia',
+        tasks: [
+          (
+            title: 'Meditacion',
+            description: null,
+            linkedResourceIds: const ['audio-1', 'texto-1'],
+          ),
+        ],
+      );
+
+      final state = container.read(appControllerProvider);
+      expect(state.tasks.length, 1);
+      expect(state.tasks.first.linkedResourceIds, ['audio-1', 'texto-1']);
+    });
+
+    test('crea ciclo con carpetas de recursos vinculadas', () async {
+      final ds = InMemoryDatasource();
+      final container = buildContainer(datasource: ds);
+      addTearDown(container.dispose);
+
+      final controller = container.read(appControllerProvider.notifier);
+      await controller.createCycle(
+        name: 'Ciclo carpetas',
+        duration: 21,
+        customDuration: false,
+        sankalpa: 'Orden',
+        selectedResourceFolderIds: const ['folder-1', 'folder-2'],
+      );
+
+      final state = container.read(appControllerProvider);
+      expect(state.cycles.length, 1);
+      expect(state.cycles.first.linkedResourceFolderIds, [
+        'folder-1',
+        'folder-2',
+      ]);
+    });
+
+    test('si inicio es futuro, crea ciclo sin activar', () async {
+      final ds = InMemoryDatasource();
+      final container = buildContainer(datasource: ds);
+      addTearDown(container.dispose);
+
+      final controller = container.read(appControllerProvider.notifier);
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      await controller.createCycle(
+        name: 'Ciclo futuro',
+        duration: 21,
+        customDuration: false,
+        sankalpa: 'Preparacion',
+        plannedStartDate: tomorrow,
+      );
+
+      final state = container.read(appControllerProvider);
+      expect(state.cycles.length, 1);
+      expect(state.cycles.first.isActive, isFalse);
+      expect(state.cycles.first.plannedStartDateKey, isNotNull);
+    });
+
+    test('si inicio es pasado y no viene de plantilla, se activa', () async {
+      final ds = InMemoryDatasource();
+      final container = buildContainer(datasource: ds);
+      addTearDown(container.dispose);
+
+      final controller = container.read(appControllerProvider.notifier);
+      final yesterday = DateTime.now().subtract(const Duration(days: 1));
+      await controller.createCycle(
+        name: 'Ciclo pasado',
+        duration: 21,
+        customDuration: false,
+        sankalpa: 'Constancia',
+        plannedStartDate: yesterday,
+      );
+
+      final state = container.read(appControllerProvider);
+      expect(state.cycles.length, 1);
+      expect(state.cycles.first.isActive, isTrue);
+      expect(state.cycles.first.currentDay, 2);
+    });
+
+    test(
+      'si fecha pasada excede duracion, se crea al ultimo dia y no se activa',
+      () async {
+        final ds = InMemoryDatasource();
+        final container = buildContainer(datasource: ds);
+        addTearDown(container.dispose);
+
+        final controller = container.read(appControllerProvider.notifier);
+        final oldDate = DateTime.now().subtract(const Duration(days: 30));
+        await controller.createCycle(
+          name: 'Ciclo vencido',
+          duration: 7,
+          customDuration: false,
+          sankalpa: 'Disciplina',
+          plannedStartDate: oldDate,
+        );
+
+        final state = container.read(appControllerProvider);
+        expect(state.cycles.length, 1);
+        expect(state.cycles.first.currentDay, 7);
+        expect(state.cycles.first.isActive, isFalse);
+      },
+    );
+
+    test(
+      'si inicio es hoy y no viene de plantilla, se activa automaticamente',
+      () async {
+        final ds = InMemoryDatasource();
+        final container = buildContainer(datasource: ds);
+        addTearDown(container.dispose);
+
+        final controller = container.read(appControllerProvider.notifier);
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        await controller.createCycle(
+          name: 'Ciclo hoy',
+          duration: 21,
+          customDuration: false,
+          sankalpa: 'Accion',
+          plannedStartDate: today,
+        );
+
+        final state = container.read(appControllerProvider);
+        expect(state.cycles.length, 1);
+        expect(state.cycles.first.isActive, isTrue);
+      },
+    );
+
+    test('si inicio es hoy y viene de plantilla, queda sin activar', () async {
+      final ds = InMemoryDatasource();
+      final container = buildContainer(datasource: ds);
+      addTearDown(container.dispose);
+
+      final controller = container.read(appControllerProvider.notifier);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      await controller.createCycle(
+        name: 'Ciclo plantilla hoy',
+        duration: 21,
+        customDuration: false,
+        sankalpa: 'Orden',
+        plannedStartDate: today,
+        createdFromTemplate: true,
+      );
+
+      final state = container.read(appControllerProvider);
+      expect(state.cycles.length, 1);
+      expect(state.cycles.first.isActive, isFalse);
     });
   });
 
@@ -212,6 +385,42 @@ void main() {
       expect(state.activeCycles.length, 1);
       expect(state.activeCycles.first.name, 'A');
     });
+
+    test('permite guardar orden de tareas del ciclo', () async {
+      final ds = InMemoryDatasource();
+      final container = buildContainer(datasource: ds);
+      addTearDown(container.dispose);
+      final controller = container.read(appControllerProvider.notifier);
+
+      await controller.createCycle(
+        name: 'Orden',
+        duration: 21,
+        customDuration: false,
+        sankalpa: 'S',
+        tasks: [
+          (title: 'A', description: null, linkedResourceIds: const <String>[]),
+          (title: 'B', description: null, linkedResourceIds: const <String>[]),
+        ],
+      );
+
+      final cycle = container.read(appControllerProvider).cycles.first;
+      final tasksBefore = container
+          .read(appControllerProvider)
+          .tasks
+          .where((t) => t.cycleId == cycle.id)
+          .toList(growable: false);
+      await controller.saveTaskOrderForCycle(cycle.id, [
+        tasksBefore[1].id,
+        tasksBefore[0].id,
+      ]);
+
+      final tasksAfter = container
+          .read(appControllerProvider)
+          .tasks
+          .where((t) => t.cycleId == cycle.id)
+          .toList(growable: false);
+      expect(tasksAfter.first.id, tasksBefore[1].id);
+    });
   });
 
   group('AppController notificaciones condicionales', () {
@@ -233,7 +442,13 @@ void main() {
           duration: 7,
           customDuration: false,
           sankalpa: 'S',
-          tasks: [(title: 'Tarea unica', description: null)],
+          tasks: [
+            (
+              title: 'Tarea unica',
+              description: null,
+              linkedResourceIds: const <String>[],
+            ),
+          ],
         );
 
         final state = container.read(appControllerProvider);
@@ -271,14 +486,26 @@ void main() {
         duration: 7,
         customDuration: false,
         sankalpa: 'S',
-        tasks: [(title: 'Tarea A', description: null)],
+        tasks: [
+          (
+            title: 'Tarea A',
+            description: null,
+            linkedResourceIds: const <String>[],
+          ),
+        ],
       );
       await controller.createCycle(
         name: 'B',
         duration: 7,
         customDuration: false,
         sankalpa: 'S',
-        tasks: [(title: 'Tarea B', description: null)],
+        tasks: [
+          (
+            title: 'Tarea B',
+            description: null,
+            linkedResourceIds: const <String>[],
+          ),
+        ],
       );
 
       final cycles = container.read(appControllerProvider).cycles;
@@ -314,7 +541,13 @@ void main() {
           duration: 7,
           customDuration: false,
           sankalpa: 'S',
-          tasks: [(title: 'Unica tarea', description: null)],
+          tasks: [
+            (
+              title: 'Unica tarea',
+              description: null,
+              linkedResourceIds: const <String>[],
+            ),
+          ],
         );
 
         final cycle = container.read(appControllerProvider).cycles.first;
@@ -347,7 +580,13 @@ void main() {
           duration: 7,
           customDuration: false,
           sankalpa: 'S',
-          tasks: [(title: 'Tarea', description: null)],
+          tasks: [
+            (
+              title: 'Tarea',
+              description: null,
+              linkedResourceIds: const <String>[],
+            ),
+          ],
         );
 
         final cycle = container.read(appControllerProvider).cycles.first;
@@ -380,7 +619,13 @@ void main() {
           duration: 7,
           customDuration: false,
           sankalpa: 'S',
-          tasks: [(title: 'Tarea', description: null)],
+          tasks: [
+            (
+              title: 'Tarea',
+              description: null,
+              linkedResourceIds: const <String>[],
+            ),
+          ],
         );
 
         final cycle = container.read(appControllerProvider).cycles.first;

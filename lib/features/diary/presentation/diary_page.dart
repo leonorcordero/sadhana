@@ -63,7 +63,7 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: cs.outlineVariant),
+              side: BorderSide.none,
             ),
             child: ListTile(
               title: Text(
@@ -274,13 +274,12 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
 
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: cs.outlineVariant),
+        side: BorderSide.none,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 12, 20),

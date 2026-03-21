@@ -321,6 +321,71 @@ void main() {
       },
     );
 
+    test('permite guardar orden manual de tareas por ciclo', () async {
+      final cycle = CycleModel.create(
+        name: 'Orden tareas',
+        duration: 21,
+        customDuration: false,
+        sankalpa: 'S',
+      );
+      await repository.createCycle(cycle);
+      final t1 = TaskModel.create(cycleId: cycle.id, title: 'Uno');
+      final t2 = TaskModel.create(cycleId: cycle.id, title: 'Dos');
+      final t3 = TaskModel.create(cycleId: cycle.id, title: 'Tres');
+      await repository.createTask(t1);
+      await repository.createTask(t2);
+      await repository.createTask(t3);
+
+      await repository.saveTaskOrderForCycle(cycle.id, [t3.id, t1.id, t2.id]);
+      final ordered = repository
+          .getTasksByCycle(cycle.id)
+          .map((task) => task.id)
+          .toList(growable: false);
+      expect(ordered, [t3.id, t1.id, t2.id]);
+    });
+
+    test('agrega nuevos recursos al final del orden de carpeta', () async {
+      const folder = ResourceFolderModel(
+        id: 'folder-append',
+        name: 'Carpeta',
+        circle: 0,
+        createdAt: '2026-02-01T10:00:00.000Z',
+      );
+      await repository.saveResourceFolder(folder);
+
+      final first = MandalaResourceModel.create(
+        cycleId: folder.id,
+        folderId: folder.id,
+        title: 'Primero',
+        type: MandalaResourceType.text,
+        inlineText: 'A',
+      );
+      final second = MandalaResourceModel.create(
+        cycleId: folder.id,
+        folderId: folder.id,
+        title: 'Segundo',
+        type: MandalaResourceType.text,
+        inlineText: 'B',
+      );
+      final third = MandalaResourceModel.create(
+        cycleId: folder.id,
+        folderId: folder.id,
+        title: 'Tercero',
+        type: MandalaResourceType.text,
+        inlineText: 'C',
+      );
+
+      await repository.saveMandalaResource(first);
+      await repository.saveMandalaResource(second);
+      await repository.saveMandalaResource(third);
+
+      final ordered = repository
+          .getMandalaResourcesForFolderOrdered(folder.id)
+          .map((r) => r.id)
+          .toList(growable: false);
+      expect(ordered, [first.id, second.id, third.id]);
+    });
+
     test('permite crear y listar subcarpetas por parentId', () async {
       final parent = await repository.createResourceFolder(
         name: 'Padre',

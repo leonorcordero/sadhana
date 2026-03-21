@@ -12,12 +12,9 @@ class CounterPage extends ConsumerStatefulWidget {
 }
 
 class _CounterPageState extends ConsumerState<CounterPage> {
-  CounterState _counterState = const CounterState(count: 0);
   bool _rapidMode = false;
-  DateTime? _lastActionAt;
   DateTime? _lastTapAt;
   DateTime? _blockedUntil;
-  final List<_CounterEvent> _history = [];
 
   static const _minTapGapMs = 300;
 
@@ -68,37 +65,19 @@ class _CounterPageState extends ConsumerState<CounterPage> {
     return '${hours}h ${mins}m';
   }
 
-  Future<void> _applyAction(_CounterAction action) async {
+  Future<void> _applyAction(CounterHistoryAction action) async {
     if (_shouldBlockFastTap()) return;
     await HapticFeedback.lightImpact();
 
-    final now = DateTime.now();
-    final sincePrevious = _lastActionAt == null
-        ? null
-        : now.difference(_lastActionAt!);
     final controller = ref.read(counterControllerProvider);
     switch (action) {
-      case _CounterAction.increment:
+      case CounterHistoryAction.increment:
         await controller.increment();
-      case _CounterAction.decrement:
+      case CounterHistoryAction.decrement:
         await controller.decrement();
-      case _CounterAction.reset:
+      case CounterHistoryAction.reset:
         await controller.reset();
     }
-
-    setState(() {
-      _counterState = controller.currentState;
-      _history.insert(
-        0,
-        _CounterEvent(
-          action: action,
-          result: _counterState.count,
-          at: now,
-          sincePrevious: sincePrevious,
-        ),
-      );
-      _lastActionAt = now;
-    });
   }
 
   Future<void> _confirmReset() async {
@@ -123,7 +102,7 @@ class _CounterPageState extends ConsumerState<CounterPage> {
       ),
     );
     if (ok == true && mounted) {
-      await _applyAction(_CounterAction.reset);
+      await _applyAction(CounterHistoryAction.reset);
     }
   }
 
@@ -136,9 +115,18 @@ class _CounterPageState extends ConsumerState<CounterPage> {
       stream: controller.stateStream,
       initialData: controller.currentState,
       builder: (context, snapshot) {
-        _counterState = snapshot.data ?? controller.currentState;
+        final counterState = snapshot.data ?? controller.currentState;
         return Scaffold(
-          appBar: AppBar(title: const Text('Contador')),
+          appBar: AppBar(
+            title: const Text('Contador'),
+            actions: [
+              IconButton(
+                tooltip: 'Reiniciar a cero',
+                icon: const Icon(Icons.replay),
+                onPressed: _confirmReset,
+              ),
+            ],
+          ),
           body: Column(
             children: [
               Expanded(
@@ -156,10 +144,10 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                             transitionBuilder: (child, animation) =>
                                 ScaleTransition(scale: animation, child: child),
                             child: FittedBox(
-                              key: ValueKey<int>(_counterState.count),
+                              key: ValueKey<int>(counterState.count),
                               fit: BoxFit.scaleDown,
                               child: Text(
-                                '${_counterState.count}',
+                                '${counterState.count}',
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.displayLarge?.copyWith(
                                   fontFamily: 'JetBrainsMono',
@@ -193,7 +181,7 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                         children: [
                           FilledButton(
                             onPressed: () =>
-                                _applyAction(_CounterAction.increment),
+                                _applyAction(CounterHistoryAction.increment),
                             style: FilledButton.styleFrom(
                               fixedSize: const Size(92, 92),
                               shape: const CircleBorder(),
@@ -203,7 +191,7 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                           const SizedBox(width: 18),
                           FilledButton(
                             onPressed: () =>
-                                _applyAction(_CounterAction.decrement),
+                                _applyAction(CounterHistoryAction.decrement),
                             style: FilledButton.styleFrom(
                               fixedSize: const Size(92, 92),
                               shape: const CircleBorder(),
@@ -211,12 +199,6 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                             child: const Icon(Icons.remove, size: 34),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 14),
-                      OutlinedButton.icon(
-                        onPressed: _confirmReset,
-                        icon: const Icon(Icons.replay),
-                        label: const Text('Reiniciar a cero'),
                       ),
                       const SizedBox(height: 8),
                     ],
@@ -231,7 +213,6 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(40),
                   ),
-                  border: Border.all(color: cs.outlineVariant),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
@@ -248,9 +229,11 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                           ),
                           const Spacer(),
                           TextButton.icon(
-                            onPressed: _history.isEmpty
+                            onPressed: counterState.history.isEmpty
                                 ? null
-                                : () => setState(() => _history.clear()),
+                                : () async {
+                                    await controller.clearHistory();
+                                  },
                             icon: const Icon(
                               Icons.delete_sweep_outlined,
                               size: 18,
@@ -261,7 +244,7 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                       ),
                       const SizedBox(height: 6),
                       Expanded(
-                        child: _history.isEmpty
+                        child: counterState.history.isEmpty
                             ? Center(
                                 child: Text(
                                   'Aún no hay acciones.',
@@ -271,27 +254,30 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                                 ),
                               )
                             : ListView.separated(
-                                itemCount: _history.length,
+                                itemCount: counterState.history.length,
                                 separatorBuilder: (_, index) =>
-                                    const Divider(height: 8),
+                                    const SizedBox(height: 8),
                                 itemBuilder: (context, index) {
-                                  final item = _history[index];
+                                  final item = counterState.history[index];
                                   return ListTile(
                                     dense: true,
                                     contentPadding: EdgeInsets.zero,
                                     leading: Icon(
                                       switch (item.action) {
-                                        _CounterAction.increment =>
+                                        CounterHistoryAction.increment =>
                                           Icons.add_circle_outline,
-                                        _CounterAction.decrement =>
+                                        CounterHistoryAction.decrement =>
                                           Icons.remove_circle_outline,
-                                        _CounterAction.reset =>
+                                        CounterHistoryAction.reset =>
                                           Icons.replay_circle_filled_outlined,
                                       },
                                       color: switch (item.action) {
-                                        _CounterAction.increment => cs.primary,
-                                        _CounterAction.decrement => cs.error,
-                                        _CounterAction.reset => cs.tertiary,
+                                        CounterHistoryAction.increment =>
+                                          cs.primary,
+                                        CounterHistoryAction.decrement =>
+                                          cs.error,
+                                        CounterHistoryAction.reset =>
+                                          cs.tertiary,
                                       },
                                     ),
                                     title: Text(
@@ -307,9 +293,9 @@ class _CounterPageState extends ConsumerState<CounterPage> {
                                     trailing: IconButton(
                                       icon: const Icon(Icons.delete_outline),
                                       tooltip: 'Eliminar registro',
-                                      onPressed: () => setState(
-                                        () => _history.removeAt(index),
-                                      ),
+                                      onPressed: () async {
+                                        await controller.removeHistoryAt(index);
+                                      },
                                     ),
                                   );
                                 },
@@ -325,20 +311,4 @@ class _CounterPageState extends ConsumerState<CounterPage> {
       },
     );
   }
-}
-
-enum _CounterAction { increment, decrement, reset }
-
-class _CounterEvent {
-  const _CounterEvent({
-    required this.action,
-    required this.result,
-    required this.at,
-    required this.sincePrevious,
-  });
-
-  final _CounterAction action;
-  final int result;
-  final DateTime at;
-  final Duration? sincePrevious;
 }

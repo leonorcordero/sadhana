@@ -79,7 +79,7 @@ class _WednesdayAffirmationPageState
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: cs.outlineVariant),
+                    side: BorderSide.none,
                   ),
                   child: ListTile(
                     onTap: () => _showDetail(item),
@@ -274,7 +274,7 @@ class _WednesdayAffirmationFormPageState
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: cs.outlineVariant),
+              side: BorderSide.none,
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),

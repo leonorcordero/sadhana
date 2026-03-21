@@ -8,6 +8,7 @@ import 'package:sadhana/core/services/notification_service.dart';
 import 'package:sadhana/core/theme/app_theme.dart';
 import 'package:sadhana/core/utils/responsive_utils.dart';
 import 'package:sadhana/data/datasources/local_storage_datasource.dart';
+import 'package:sadhana/features/app_shell/presentation/global_utility_overlay.dart';
 import 'package:sadhana/features/app_shell/presentation/home_shell.dart';
 
 Future<void> main() async {
@@ -72,7 +73,10 @@ class SadhanaApp extends ConsumerWidget {
 
         return MediaQuery(
           data: media.copyWith(textScaler: TextScaler.linear(textScale)),
-          child: Theme(data: scaledTheme, child: child ?? const SizedBox()),
+          child: Theme(
+            data: scaledTheme,
+            child: GlobalUtilityOverlay(child: child ?? const SizedBox()),
+          ),
         );
       },
       home: const HomeShell(),

@@ -1,18 +1,21 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/services.dart';
 import 'package:sadhana/core/constants/app_constants.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:sadhana/core/utils/date_utils.dart';
+import 'package:sadhana/data/models/cycle_model.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
-  NotificationService();
+  NotificationService({FlutterLocalNotificationsPlugin? plugin})
+    : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
+  static const _dailyReminderBaseId = 100;
+  static const _dailyReminderRange = 50000;
+  static const _startReminderBaseId = 500000;
+  static const _startReminderRange = 50000;
+  final FlutterLocalNotificationsPlugin _plugin;
   bool get _isWeb => kIsWeb;
 
   Future<void> initialize() async {
@@ -56,15 +59,10 @@ class NotificationService {
       ..retainWhere((h) => h >= 0 && h <= 23);
     if (normalized.isEmpty) return;
 
-    // Elimina el archivo de SharedPreferences de notificaciones antiguas
-    // para limpiar datos en formato incompatible de versiones anteriores.
-    // Esto permite que cancelAll() y zonedSchedule() funcionen sin errores.
-    await _clearLegacyNotificationPrefs();
-
     try {
-      await _plugin.cancelAll();
+      await cancelDailyReminders();
     } on PlatformException {
-      // Si aún falla (p. ej. el archivo estaba en caché), continuamos.
+      // Si aún falla (p. ej. datos viejos en caché), continuamos.
     }
 
     final body = _buildReminderBody(
@@ -73,7 +71,7 @@ class NotificationService {
     );
 
     for (var i = 0; i < normalized.length; i++) {
-      final id = 100 + i;
+      final id = _dailyReminderBaseId + i;
       try {
         await _plugin.zonedSchedule(
           id,
@@ -114,13 +112,87 @@ class NotificationService {
   // completo todas sus tareas antes de que llegue el proximo recordatorio).
   Future<void> cancelDailyReminders() async {
     if (_isWeb) return;
-    await _clearLegacyNotificationPrefs();
+    try {
+      final pending = await _plugin.pendingNotificationRequests();
+      for (final req in pending) {
+        final id = req.id;
+        if (id < _dailyReminderBaseId) continue;
+        if (id >= _dailyReminderBaseId + _dailyReminderRange) continue;
+        await _plugin.cancel(id);
+      }
+    } on PlatformException {
+      // Silencioso si los datos guardados son incompatibles.
+    } catch (_) {}
+    // Compatibilidad defensiva para instalaciones viejas.
     for (var i = 0; i < 12; i++) {
       try {
-        await _plugin.cancel(100 + i);
-      } on PlatformException {
-        // Silencioso si los datos guardados son incompatibles.
+        await _plugin.cancel(_dailyReminderBaseId + i);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> scheduleMandalaStartReminders({
+    required List<CycleModel> cycles,
+    required bool enabled,
+  }) async {
+    if (_isWeb) return;
+    try {
+      await _cancelExistingMandalaStartReminders();
+      if (!enabled) return;
+      const android = AndroidNotificationDetails(
+        'sadhana_start_reminders',
+        'Recordatorios de inicio',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+      const ios = DarwinNotificationDetails();
+      const details = NotificationDetails(android: android, iOS: ios);
+      final now = tz.TZDateTime.now(tz.local);
+      for (final cycle in cycles) {
+        if (cycle.isActive) continue;
+        final plannedKey = cycle.plannedStartDateKey?.trim();
+        if (plannedKey == null || plannedKey.isEmpty) continue;
+        DateTime plannedDate;
+        try {
+          plannedDate = DateUtilsX.fromDateKey(plannedKey);
+        } catch (_) {
+          continue;
+        }
+        final previousDay = tz.TZDateTime(
+          tz.local,
+          plannedDate.year,
+          plannedDate.month,
+          plannedDate.day,
+          19,
+        ).subtract(const Duration(days: 1));
+        final startMorning = tz.TZDateTime(
+          tz.local,
+          plannedDate.year,
+          plannedDate.month,
+          plannedDate.day,
+          8,
+        );
+        if (previousDay.isAfter(now)) {
+          await _scheduleStartReminder(
+            id: _startReminderId(cycle.id, slot: 1),
+            when: previousDay,
+            details: details,
+            title: 'Mañana inicia tu mandala',
+            body: '${cycle.name} comienza mañana. Deja lista tu práctica.',
+          );
+        }
+        if (startMorning.isAfter(now)) {
+          await _scheduleStartReminder(
+            id: _startReminderId(cycle.id, slot: 2),
+            when: startMorning,
+            details: details,
+            title: 'Hoy inicia tu mandala',
+            body: '${cycle.name} inicia hoy. Actívalo manualmente y comienza.',
+          );
+        }
       }
+    } catch (_) {
+      // No bloquea la app si fallan notificaciones.
     }
   }
 
@@ -172,25 +244,65 @@ class NotificationService {
     }
   }
 
-  /// Borra el archivo XML de SharedPreferences que usa flutter_local_notifications
-  /// para persistir las notificaciones programadas. Necesario cuando los datos
-  /// guardados con una versión anterior del plugin son incompatibles con la
-  /// versión actual y causan un RuntimeException al deserializarse.
-  Future<void> _clearLegacyNotificationPrefs() async {
-    if (kIsWeb || !Platform.isAndroid) return;
+  Future<void> _scheduleStartReminder({
+    required int id,
+    required tz.TZDateTime when,
+    required NotificationDetails details,
+    required String title,
+    required String body,
+  }) async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      // getApplicationDocumentsDirectory() devuelve <app>/app_flutter/
-      // el directorio shared_prefs está un nivel arriba: <app>/shared_prefs/
-      final file = File(
-        '${dir.parent.path}/shared_prefs/scheduled_notifications.xml',
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        when,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
       );
-      if (await file.exists()) {
-        await file.delete();
+    } on PlatformException catch (e) {
+      if (e.code != 'exact_alarms_not_permitted') return;
+      try {
+        await _plugin.zonedSchedule(
+          id,
+          title,
+          body,
+          when,
+          details,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+        );
+      } catch (_) {}
+    } catch (_) {}
+  }
+
+  Future<void> _cancelExistingMandalaStartReminders() async {
+    try {
+      final pending = await _plugin.pendingNotificationRequests();
+      for (final req in pending) {
+        final id = req.id;
+        if (id < _startReminderBaseId) continue;
+        if (id >= _startReminderBaseId + _startReminderRange) continue;
+        await _plugin.cancel(id);
       }
-    } catch (_) {
-      // Si no se puede borrar, continuamos; el try/catch del plugin manejará
-      // cualquier error posterior.
+    } catch (_) {}
+  }
+
+  int _startReminderId(String cycleId, {required int slot}) {
+    final hash = _stableHash(cycleId);
+    final perCycle = (hash % (_startReminderRange ~/ 2)) * 2;
+    return _startReminderBaseId + perCycle + (slot % 2);
+  }
+
+  int _stableHash(String input) {
+    var hash = 2166136261;
+    for (final codeUnit in input.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 16777619) & 0x7fffffff;
     }
+    return hash;
   }
 }

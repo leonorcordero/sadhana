@@ -1,8 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sadhana/core/providers.dart';
+import 'package:sadhana/core/settings/app_settings.dart';
 import 'package:sadhana/core/utils/responsive_utils.dart';
 import 'package:sadhana/features/cycles/presentation/cycles_page.dart';
 import 'package:sadhana/features/dashboard/presentation/dashboard_page.dart';
@@ -10,8 +13,6 @@ import 'package:sadhana/features/diary/presentation/diary_page.dart';
 import 'package:sadhana/features/resources/presentation/resources_library_page.dart';
 import 'package:sadhana/features/utilities/presentation/audio_recorder_page.dart';
 import 'package:sadhana/features/utilities/presentation/audio_player_page.dart';
-import 'package:sadhana/features/utilities/presentation/counter_page.dart';
-import 'package:sadhana/features/utilities/presentation/stopwatch_page.dart';
 import 'package:sadhana/features/utilities/presentation/utilities_page.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
@@ -24,18 +25,12 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 2;
   Offset? _miniPlayerPosition;
-  Offset? _stopwatchPopupPosition;
   Offset? _recorderPopupPosition;
-  Offset? _counterPopupPosition;
-  bool _hideStopwatchPopup = false;
   bool _hideRecorderPopup = false;
-  bool _hideCounterPopup = false;
-  bool _stopwatchPopupSessionVisible = false;
   bool _recorderPopupSessionVisible = false;
-  bool _counterPopupSessionVisible = false;
-  bool _wasStopwatchRunning = false;
   bool _wasRecorderRecording = false;
-  bool _wasCounterNonZero = false;
+  ProviderSubscription<String?>? _errorSub;
+  ProviderSubscription<AppSettings>? _settingsSub;
 
   final _pages = const [
     CyclesPage(),
@@ -48,6 +43,35 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   void initState() {
     super.initState();
+    _errorSub = ref.listenManual<String?>(
+      appControllerProvider.select((s) => s.error),
+      (previous, next) {
+        if (!mounted) return;
+        if (next == null || next.isEmpty) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next)));
+      },
+    );
+    _settingsSub = ref.listenManual<AppSettings>(appSettingsProvider, (
+      previous,
+      next,
+    ) {
+      if (previous == null ||
+          previous.remindersEnabled != next.remindersEnabled ||
+          !listEquals(previous.reminderHours, next.reminderHours) ||
+          previous.reminderContentType != next.reminderContentType ||
+          previous.customReminderText != next.customReminderText) {
+        ref
+            .read(appControllerProvider.notifier)
+            .reconfigureNotifications(
+              enabled: next.remindersEnabled,
+              hours: next.reminderHours,
+              contentType: next.reminderContentType,
+              customText: next.customReminderText,
+            );
+      }
+    });
     Future.microtask(() {
       final settings = ref.read(appSettingsProvider);
       ref
@@ -64,35 +88,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final error = ref.watch(appControllerProvider.select((s) => s.error));
-    ref.watch(appSettingsProvider);
     final cs = Theme.of(context).colorScheme;
     final spacingScale = ResponsiveUtils.spacingScale(context);
     final isNarrow = ResponsiveUtils.isNarrowPhone(context);
-
-    ref.listen(appControllerProvider.select((s) => s.error), (previous, next) {
-      if (next != null && next.isNotEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(next)));
-      }
-    });
-
-    ref.listen(appSettingsProvider, (previous, next) {
-      if (previous == null ||
-          previous.remindersEnabled != next.remindersEnabled ||
-          previous.reminderHours.toString() != next.reminderHours.toString() ||
-          previous.reminderContentType != next.reminderContentType ||
-          previous.customReminderText != next.customReminderText) {
-        ref
-            .read(appControllerProvider.notifier)
-            .reconfigureNotifications(
-              enabled: next.remindersEnabled,
-              hours: next.reminderHours,
-              contentType: next.reminderContentType,
-              customText: next.customReminderText,
-            );
-      }
-    });
 
     return Scaffold(
       // Sin extendBody para que los FABs de las páginas internas
@@ -100,9 +98,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final audioController = ref.read(resourcesAudioControllerProvider);
-          final stopwatchController = ref.read(stopwatchControllerProvider);
           final recorderController = ref.read(recorderControllerProvider);
-          final counterController = ref.read(counterControllerProvider);
           const audioWidth = 192.0;
           const popupWidth = 206.0;
           const popupHeight = 56.0;
@@ -119,9 +115,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           final minPopupLeft = math.min(8.0, maxPopupLeft);
           final minTop = math.min(8.0, maxTop);
           _miniPlayerPosition ??= Offset(maxAudioLeft, maxTop);
-          _stopwatchPopupPosition ??= Offset(maxPopupLeft, maxTop - 186);
           _recorderPopupPosition ??= Offset(maxPopupLeft, maxTop - 124);
-          _counterPopupPosition ??= Offset(maxPopupLeft, maxTop - 62);
 
           final miniLeft = _miniPlayerPosition!.dx.clamp(
             minAudioLeft,
@@ -134,370 +128,190 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             builder: (context, snapshot) {
               final audioState = snapshot.data ?? audioController.currentState;
               return StreamBuilder(
-                stream: stopwatchController.stateStream,
-                initialData: stopwatchController.currentState,
-                builder: (context, stopwatchSnapshot) {
-                  final stopwatchState =
-                      stopwatchSnapshot.data ??
-                      stopwatchController.currentState;
-                  return StreamBuilder(
-                    stream: recorderController.stateStream,
-                    initialData: recorderController.currentState,
-                    builder: (context, recorderSnapshot) {
-                      final recorderState =
-                          recorderSnapshot.data ??
-                          recorderController.currentState;
-                      return StreamBuilder(
-                        stream: counterController.stateStream,
-                        initialData: counterController.currentState,
-                        builder: (context, counterSnapshot) {
-                          final counterState =
-                              counterSnapshot.data ??
-                              counterController.currentState;
-                          final isStopwatchRunning = stopwatchState.isRunning;
-                          final isRecorderRecording = recorderState.isRecording;
-                          final isCounterNonZero = counterState.count != 0;
+                stream: recorderController.stateStream,
+                initialData: recorderController.currentState,
+                builder: (context, recorderSnapshot) {
+                  final recorderState =
+                      recorderSnapshot.data ?? recorderController.currentState;
+                  final isRecorderRecording = recorderState.isRecording;
 
-                          if (isStopwatchRunning && !_wasStopwatchRunning) {
-                            _stopwatchPopupSessionVisible = true;
-                            _hideStopwatchPopup = false;
-                          }
-                          if (isRecorderRecording && !_wasRecorderRecording) {
-                            _recorderPopupSessionVisible = true;
-                            _hideRecorderPopup = false;
-                          }
-                          if (isCounterNonZero && !_wasCounterNonZero) {
-                            _counterPopupSessionVisible = true;
-                            _hideCounterPopup = false;
-                          }
-                          _wasStopwatchRunning = isStopwatchRunning;
-                          _wasRecorderRecording = isRecorderRecording;
-                          _wasCounterNonZero = isCounterNonZero;
+                  if (isRecorderRecording && !_wasRecorderRecording) {
+                    _recorderPopupSessionVisible = true;
+                    _hideRecorderPopup = false;
+                  }
+                  _wasRecorderRecording = isRecorderRecording;
 
-                          final isStopwatchVisible =
-                              _stopwatchPopupSessionVisible &&
-                              !_hideStopwatchPopup;
-                          final isRecorderVisible =
-                              _recorderPopupSessionVisible &&
-                              !_hideRecorderPopup;
-                          final isCounterVisible =
-                              _counterPopupSessionVisible && !_hideCounterPopup;
-                          return Stack(
-                            children: [
-                              _pages[_index],
-                              if (audioState.activeResourceId != null)
-                                Positioned(
-                                  left: miniLeft,
-                                  top: miniTop,
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) =>
-                                              const AudioPlayerPage(),
-                                        ),
-                                      );
-                                    },
-                                    onPanUpdate: (details) {
-                                      setState(() {
-                                        final nextX =
-                                            (_miniPlayerPosition!.dx +
-                                                    details.delta.dx)
-                                                .clamp(
-                                                  minAudioLeft,
-                                                  maxAudioLeft,
-                                                );
-                                        final nextY =
-                                            (_miniPlayerPosition!.dy +
-                                                    details.delta.dy)
-                                                .clamp(minTop, maxTop);
-                                        _miniPlayerPosition = Offset(
-                                          nextX,
-                                          nextY,
-                                        );
-                                      });
-                                    },
-                                    child: Material(
-                                      elevation: 5,
-                                      borderRadius: BorderRadius.circular(12),
-                                      color: cs.surface,
-                                      child: Container(
-                                        width: audioWidth,
-                                        height: popupHeight,
-                                        padding: const EdgeInsets.fromLTRB(
-                                          8,
-                                          6,
-                                          4,
-                                          6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          border: Border.all(
-                                            color: cs.outlineVariant,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.graphic_eq_outlined,
-                                              size: 16,
-                                              color: cs.primary,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                audioState.activeTitle ??
-                                                    'Audio',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                              ),
-                                            ),
-                                            IconButton(
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              constraints: const BoxConstraints(
-                                                minWidth: 30,
-                                                minHeight: 30,
-                                              ),
-                                              padding: EdgeInsets.zero,
-                                              onPressed: audioController
-                                                  .togglePlayPause,
-                                              icon: Icon(
-                                                audioState.isPlaying
-                                                    ? Icons.pause_circle_outline
-                                                    : Icons.play_circle_outline,
-                                                size: 20,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            IconButton(
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              constraints: const BoxConstraints(
-                                                minWidth: 30,
-                                                minHeight: 30,
-                                              ),
-                                              padding: EdgeInsets.zero,
-                                              onPressed:
-                                                  audioController.stopAndClear,
-                                              icon: const Icon(
-                                                Icons.close,
-                                                size: 18,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              if (isStopwatchVisible)
-                                Positioned(
-                                  left: _stopwatchPopupPosition!.dx.clamp(
-                                    minPopupLeft,
-                                    maxPopupLeft,
-                                  ),
-                                  top: _stopwatchPopupPosition!.dy.clamp(
-                                    minTop,
-                                    maxTop,
-                                  ),
-                                  child: GestureDetector(
-                                    onPanUpdate: (details) {
-                                      setState(() {
-                                        final nextX =
-                                            (_stopwatchPopupPosition!.dx +
-                                                    details.delta.dx)
-                                                .clamp(
-                                                  minPopupLeft,
-                                                  maxPopupLeft,
-                                                );
-                                        final nextY =
-                                            (_stopwatchPopupPosition!.dy +
-                                                    details.delta.dy)
-                                                .clamp(minTop, maxTop);
-                                        _stopwatchPopupPosition = Offset(
-                                          nextX,
-                                          nextY,
-                                        );
-                                      });
-                                    },
-                                    child: _MiniUtilityCard(
-                                      icon: Icons.timer_outlined,
-                                      title: 'Cronómetro',
-                                      subtitle: _formatElapsed(
-                                        stopwatchState.elapsed,
-                                      ),
-                                      onTap: () {
-                                        setState(() {
-                                          _hideStopwatchPopup = true;
-                                          _stopwatchPopupSessionVisible = false;
-                                        });
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute<void>(
-                                            builder: (_) =>
-                                                const StopwatchPage(),
-                                          ),
-                                        );
-                                      },
-                                      primaryIcon: stopwatchState.isRunning
-                                          ? Icons.pause
-                                          : Icons.play_arrow,
-                                      onPrimaryTap: () {
-                                        stopwatchController.toggle();
-                                      },
-                                      showDismiss: true,
-                                      onDismissTap: () {
-                                        setState(() {
-                                          _hideStopwatchPopup = true;
-                                          _stopwatchPopupSessionVisible = false;
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              if (isRecorderVisible)
-                                Positioned(
-                                  left: _recorderPopupPosition!.dx.clamp(
-                                    minPopupLeft,
-                                    maxPopupLeft,
-                                  ),
-                                  top: _recorderPopupPosition!.dy.clamp(
-                                    minTop,
-                                    maxTop,
-                                  ),
-                                  child: GestureDetector(
-                                    onPanUpdate: (details) {
-                                      setState(() {
-                                        final nextX =
-                                            (_recorderPopupPosition!.dx +
-                                                    details.delta.dx)
-                                                .clamp(
-                                                  minPopupLeft,
-                                                  maxPopupLeft,
-                                                );
-                                        final nextY =
-                                            (_recorderPopupPosition!.dy +
-                                                    details.delta.dy)
-                                                .clamp(minTop, maxTop);
-                                        _recorderPopupPosition = Offset(
-                                          nextX,
-                                          nextY,
-                                        );
-                                      });
-                                    },
-                                    child: _MiniUtilityCard(
-                                      icon: Icons.mic,
-                                      title: recorderState.isRecording
-                                          ? 'Grabando'
-                                          : 'Grabador',
-                                      subtitle: recorderState.isRecording
-                                          ? 'Audio en curso'
-                                          : 'Listo para grabar',
-                                      onTap: () {
-                                        setState(() {
-                                          _hideRecorderPopup = true;
-                                          _recorderPopupSessionVisible = false;
-                                        });
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute<void>(
-                                            builder: (_) =>
-                                                const AudioRecorderPage(),
-                                          ),
-                                        );
-                                      },
-                                      primaryIcon: recorderState.isRecording
-                                          ? Icons.stop
-                                          : Icons.play_arrow,
-                                      onPrimaryTap: () {
-                                        recorderController.toggleRecording();
-                                      },
-                                      showDismiss: true,
-                                      onDismissTap: () {
-                                        setState(() {
-                                          _hideRecorderPopup = true;
-                                          _recorderPopupSessionVisible = false;
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              if (isCounterVisible)
-                                Positioned(
-                                  left: _counterPopupPosition!.dx.clamp(
-                                    minPopupLeft,
-                                    maxPopupLeft,
-                                  ),
-                                  top: _counterPopupPosition!.dy.clamp(
-                                    minTop,
-                                    maxTop,
-                                  ),
-                                  child: GestureDetector(
-                                    onPanUpdate: (details) {
-                                      setState(() {
-                                        final nextX =
-                                            (_counterPopupPosition!.dx +
-                                                    details.delta.dx)
-                                                .clamp(
-                                                  minPopupLeft,
-                                                  maxPopupLeft,
-                                                );
-                                        final nextY =
-                                            (_counterPopupPosition!.dy +
-                                                    details.delta.dy)
-                                                .clamp(minTop, maxTop);
-                                        _counterPopupPosition = Offset(
-                                          nextX,
-                                          nextY,
-                                        );
-                                      });
-                                    },
-                                    child: _MiniUtilityCard(
-                                      icon: Icons.exposure_plus_1_outlined,
-                                      title: 'Contador',
-                                      subtitle: '${counterState.count}',
-                                      onTap: () {
-                                        setState(() {
-                                          _hideCounterPopup = true;
-                                          _counterPopupSessionVisible = false;
-                                        });
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute<void>(
-                                            builder: (_) => const CounterPage(),
-                                          ),
-                                        );
-                                      },
-                                      primaryIcon: Icons.add,
-                                      secondaryIcon: Icons.remove,
-                                      onPrimaryTap: () {
-                                        counterController.increment();
-                                      },
-                                      onSecondaryTap: () {
-                                        counterController.decrement();
-                                      },
-                                      showDismiss: true,
-                                      onDismissTap: () {
-                                        setState(() {
-                                          _hideCounterPopup = true;
-                                          _counterPopupSessionVisible = false;
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                ),
-                            ],
+                  final isRecorderVisible =
+                      _recorderPopupSessionVisible && !_hideRecorderPopup;
+                  return Stack(
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          final offsetTween = Tween<Offset>(
+                            begin: const Offset(0.02, 0),
+                            end: Offset.zero,
+                          );
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: offsetTween.animate(animation),
+                              child: child,
+                            ),
                           );
                         },
-                      );
-                    },
+                        child: KeyedSubtree(
+                          key: ValueKey<int>(_index),
+                          child: _pages[_index],
+                        ),
+                      ),
+                      if (audioState.activeResourceId != null)
+                        Positioned(
+                          left: miniLeft,
+                          top: miniTop,
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const AudioPlayerPage(),
+                                ),
+                              );
+                            },
+                            onPanUpdate: (details) {
+                              setState(() {
+                                final nextX =
+                                    (_miniPlayerPosition!.dx + details.delta.dx)
+                                        .clamp(minAudioLeft, maxAudioLeft);
+                                final nextY =
+                                    (_miniPlayerPosition!.dy + details.delta.dy)
+                                        .clamp(minTop, maxTop);
+                                _miniPlayerPosition = Offset(nextX, nextY);
+                              });
+                            },
+                            child: Material(
+                              elevation: 0,
+                              borderRadius: BorderRadius.circular(12),
+                              color: cs.surface,
+                              child: Container(
+                                width: audioWidth,
+                                height: popupHeight,
+                                padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.graphic_eq_outlined,
+                                      size: 16,
+                                      color: cs.primary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        audioState.activeTitle ?? 'Audio',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      visualDensity: VisualDensity.compact,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 30,
+                                        minHeight: 30,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      onPressed:
+                                          audioController.togglePlayPause,
+                                      icon: Icon(
+                                        audioState.isPlaying
+                                            ? Icons.pause_circle_outline
+                                            : Icons.play_circle_outline,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      visualDensity: VisualDensity.compact,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 30,
+                                        minHeight: 30,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      onPressed: audioController.stopAndClear,
+                                      icon: const Icon(Icons.close, size: 18),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (isRecorderVisible)
+                        Positioned(
+                          left: _recorderPopupPosition!.dx.clamp(
+                            minPopupLeft,
+                            maxPopupLeft,
+                          ),
+                          top: _recorderPopupPosition!.dy.clamp(minTop, maxTop),
+                          child: GestureDetector(
+                            onPanUpdate: (details) {
+                              setState(() {
+                                final nextX =
+                                    (_recorderPopupPosition!.dx +
+                                            details.delta.dx)
+                                        .clamp(minPopupLeft, maxPopupLeft);
+                                final nextY =
+                                    (_recorderPopupPosition!.dy +
+                                            details.delta.dy)
+                                        .clamp(minTop, maxTop);
+                                _recorderPopupPosition = Offset(nextX, nextY);
+                              });
+                            },
+                            child: _MiniUtilityCard(
+                              icon: Icons.mic,
+                              title: recorderState.isRecording
+                                  ? 'Grabando'
+                                  : 'Grabador',
+                              subtitle: recorderState.isRecording
+                                  ? 'Audio en curso'
+                                  : 'Listo para grabar',
+                              onTap: () {
+                                setState(() {
+                                  _hideRecorderPopup = true;
+                                  _recorderPopupSessionVisible = false;
+                                });
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => const AudioRecorderPage(),
+                                  ),
+                                );
+                              },
+                              primaryIcon: recorderState.isRecording
+                                  ? Icons.stop
+                                  : Icons.play_arrow,
+                              onPrimaryTap: () {
+                                recorderController.toggleRecording();
+                              },
+                              showDismiss: true,
+                              onDismissTap: () {
+                                setState(() {
+                                  _hideRecorderPopup = true;
+                                  _recorderPopupSessionVisible = false;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
                   );
                 },
               );
@@ -515,12 +329,40 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
+              Positioned.fill(
+                child: Padding(
+                  padding: EdgeInsets.only(top: isNarrow ? 8 : 10),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          cs.primary.withValues(alpha: 0.94),
+                          cs.primary,
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(isNarrow ? 28 : 32),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.14),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               NavigationBar(
                 height: isNarrow ? 86 : 98,
-                backgroundColor: cs.primary,
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
                 indicatorColor: _index == 2
                     ? Colors.transparent
-                    : cs.onPrimary.withValues(alpha: 0.16),
+                    : cs.onPrimary.withValues(alpha: 0.2),
                 labelTextStyle: WidgetStateProperty.resolveWith((states) {
                   final selected = states.contains(WidgetState.selected);
                   return Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -532,8 +374,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   );
                 }),
                 selectedIndex: _index,
-                onDestinationSelected: (value) =>
-                    setState(() => _index = value),
+                onDestinationSelected: (value) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _index = value);
+                },
                 destinations: [
                   NavigationDestination(
                     icon: Icon(
@@ -588,7 +432,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     child: Material(
                       color: Colors.transparent,
                       child: InkResponse(
-                        onTap: () => setState(() => _index = 2),
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _index = 2);
+                        },
                         radius: isNarrow ? 34 : 38,
                         customBorder: const CircleBorder(),
                         child: AnimatedContainer(
@@ -598,10 +445,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                           decoration: BoxDecoration(
                             color: cs.primary,
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Theme.of(context).scaffoldBackgroundColor,
-                              width: isNarrow ? 2.8 : 3.2,
-                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withValues(alpha: 0.22),
@@ -642,12 +485,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 
-  String _formatElapsed(Duration d) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    final hh = two(d.inHours);
-    final mm = two(d.inMinutes.remainder(60));
-    final ss = two(d.inSeconds.remainder(60));
-    return '$hh:$mm:$ss';
+  @override
+  void dispose() {
+    _errorSub?.close();
+    _settingsSub?.close();
+    super.dispose();
   }
 }
 
@@ -659,8 +501,6 @@ class _MiniUtilityCard extends StatelessWidget {
     required this.onTap,
     required this.primaryIcon,
     required this.onPrimaryTap,
-    this.secondaryIcon,
-    this.onSecondaryTap,
     this.showDismiss = false,
     this.onDismissTap,
   });
@@ -671,8 +511,6 @@ class _MiniUtilityCard extends StatelessWidget {
   final VoidCallback onTap;
   final IconData primaryIcon;
   final VoidCallback onPrimaryTap;
-  final IconData? secondaryIcon;
-  final VoidCallback? onSecondaryTap;
   final bool showDismiss;
   final VoidCallback? onDismissTap;
 
@@ -680,16 +518,13 @@ class _MiniUtilityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
-      elevation: 4,
+      elevation: 0,
       borderRadius: BorderRadius.circular(12),
       color: cs.surface,
       child: Container(
         width: 206,
         padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: cs.outlineVariant),
-        ),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
         child: Row(
           children: [
             Icon(icon, size: 16, color: cs.primary),
@@ -725,16 +560,6 @@ class _MiniUtilityCard extends StatelessWidget {
                 ),
               ),
             ),
-            if (secondaryIcon != null && onSecondaryTap != null)
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                padding: EdgeInsets.zero,
-                onPressed: onSecondaryTap,
-                icon: Icon(secondaryIcon, size: 18),
-              ),
-            if (secondaryIcon != null && onSecondaryTap != null)
-              const SizedBox(width: 10),
             IconButton(
               visualDensity: VisualDensity.compact,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),

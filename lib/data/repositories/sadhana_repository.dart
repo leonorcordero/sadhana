@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -11,8 +12,10 @@ import 'package:sadhana/data/models/dashboard_snapshot.dart';
 import 'package:sadhana/data/models/day_log_model.dart';
 import 'package:sadhana/data/models/diary_entry_model.dart';
 import 'package:sadhana/data/models/mandala_resource_model.dart';
+import 'package:sadhana/data/models/mandala_template_model.dart';
 import 'package:sadhana/data/models/note_model.dart';
 import 'package:sadhana/data/models/task_model.dart';
+import 'package:sadhana/data/models/task_progress_model.dart';
 import 'package:sadhana/data/models/resource_folder_model.dart';
 import 'package:sadhana/data/models/wednesday_affirmation_model.dart';
 import 'package:sadhana/features/streaks/application/streak_calculator.dart';
@@ -33,6 +36,24 @@ class SadhanaRepository {
   static const _resourceFoldersOrderKey = 'resource_folders_order';
   static const _resourceItemsOrderByFolderKey =
       'resource_items_order_by_folder';
+  static const _taskOrderByCycleKey = 'task_order_by_cycle';
+  static const _audioosVariosFolderId = 'audioos-varios';
+  static const _audioosVariosFolderName = 'Audios varios';
+  static const _notesFolderId = 'notas-root';
+  static const _notesFolderName = 'Notas';
+  static const _resourcesCirculosRootId = 'recursos-circulos-root';
+  static const _resourcesCirculosRootName = 'Recursos círculos';
+  static const _resourcesCircleFolderPrefix = 'recursos-circulos-circle-';
+  static const _legacyMandalaAudiosRootId = 'audios-mandalas-root';
+  static const _legacyMandalaCircleFolderPrefix = 'audios-mandalas-circle-';
+  static const _demoImagesFolderId = 'demo-imagenes';
+  static const _demoImagesFolderName = 'Demo imágenes';
+  static const _demoImageUrls = <String>[
+    'https://picsum.photos/seed/sadhana-demo-1/1280/900',
+    'https://picsum.photos/seed/sadhana-demo-2/1280/900',
+    'https://picsum.photos/seed/sadhana-demo-3/1280/900',
+  ];
+  static const _mandalaTemplatesKey = 'mandala_templates';
   static const _wednesdayAffirmationKey = 'wednesday_affirmation';
   static const _moonNightWarningTextKey = 'moon_night_warning_text';
   static const _moonDayOnlyTextKey = 'moon_day_only_text';
@@ -76,6 +97,7 @@ class SadhanaRepository {
     }
 
     await _datasource.deleteSetting('last_closed_date_$cycleId');
+    await _removeTaskOrderForCycle(cycleId);
     await _datasource.deleteCycle(cycleId);
   }
 
@@ -131,14 +153,61 @@ class SadhanaRepository {
   }
 
   List<TaskModel> getTasksByCycle(String cycleId) {
-    return _datasource
+    final items = _datasource
         .getTasks()
         .where((task) => task.cycleId == cycleId)
         .toList(growable: false);
+    final order = _getTaskOrderByCycle()[cycleId] ?? const <String>[];
+    return _applyManualOrder(
+      items: items,
+      idOf: (task) => task.id,
+      order: order,
+      fallbackCompare: (a, b) => a.title.compareTo(b.title),
+    );
+  }
+
+  ({List<TaskModel> tasks, List<DayLogModel> logs})
+  getStateCollectionsForCycles(List<CycleModel> cycles) {
+    if (cycles.isEmpty) {
+      return (tasks: const <TaskModel>[], logs: const <DayLogModel>[]);
+    }
+    final cycleIds = cycles.map((cycle) => cycle.id).toSet();
+    final taskOrderByCycle = _getTaskOrderByCycle();
+    final tasksByCycle = <String, List<TaskModel>>{};
+    final logsByCycle = <String, List<DayLogModel>>{};
+
+    for (final task in _datasource.getTasks()) {
+      if (!cycleIds.contains(task.cycleId)) continue;
+      tasksByCycle.putIfAbsent(task.cycleId, () => <TaskModel>[]).add(task);
+    }
+    for (final log in _datasource.getDayLogs()) {
+      if (!cycleIds.contains(log.cycleId)) continue;
+      logsByCycle.putIfAbsent(log.cycleId, () => <DayLogModel>[]).add(log);
+    }
+
+    final orderedTasks = <TaskModel>[];
+    final orderedLogs = <DayLogModel>[];
+    for (final cycle in cycles) {
+      final cycleTasks = tasksByCycle[cycle.id] ?? const <TaskModel>[];
+      orderedTasks.addAll(
+        _applyManualOrder(
+          items: List<TaskModel>.from(cycleTasks),
+          idOf: (task) => task.id,
+          order: taskOrderByCycle[cycle.id] ?? const <String>[],
+          fallbackCompare: (a, b) => a.title.compareTo(b.title),
+        ),
+      );
+      final cycleLogs = logsByCycle[cycle.id];
+      if (cycleLogs != null && cycleLogs.isNotEmpty) {
+        orderedLogs.addAll(cycleLogs);
+      }
+    }
+    return (tasks: orderedTasks, logs: orderedLogs);
   }
 
   Future<TaskModel> createTask(TaskModel task) async {
     await _datasource.saveTask(task);
+    await _appendTaskOrder(task.cycleId, task.id);
     return task;
   }
 
@@ -156,26 +225,67 @@ class SadhanaRepository {
     }
 
     await _datasource.deleteTask(taskId);
+    await _removeTaskFromOrder(task.cycleId, taskId);
+  }
+
+  Future<void> saveTaskOrderForCycle(
+    String cycleId,
+    List<String> orderedTaskIds,
+  ) async {
+    final validIds = getTasksByCycle(cycleId).map((task) => task.id).toSet();
+    final sanitized = <String>[];
+    for (final id in orderedTaskIds) {
+      final normalized = id.trim();
+      if (normalized.isEmpty) continue;
+      if (!validIds.contains(normalized)) continue;
+      if (!sanitized.contains(normalized)) sanitized.add(normalized);
+    }
+    for (final id in validIds) {
+      if (!sanitized.contains(id)) sanitized.add(id);
+    }
+    final map = _getTaskOrderByCycle();
+    map[cycleId] = sanitized;
+    await _saveTaskOrderByCycle(map);
   }
 
   DayLogModel getOrCreateDayLog({
     required String cycleId,
     required DateTime date,
   }) {
-    final key = _dayLogId(cycleId, date);
-    final existing = _datasource.getDayLog(key);
-    if (existing != null) return existing;
+    return getDayLogForDate(cycleId: cycleId, date: date) ??
+        _buildEmptyDayLog(cycleId: cycleId, date: date);
+  }
 
-    final created = DayLogModel(
-      id: key,
+  DayLogModel? getDayLogForDate({
+    required String cycleId,
+    required DateTime date,
+  }) {
+    return _datasource.getDayLog(_dayLogId(cycleId, date));
+  }
+
+  Future<DayLogModel> _ensureDayLog({
+    required String cycleId,
+    required DateTime date,
+  }) async {
+    final existing = getDayLogForDate(cycleId: cycleId, date: date);
+    if (existing != null) return existing;
+    final created = _buildEmptyDayLog(cycleId: cycleId, date: date);
+    await _datasource.saveDayLog(created);
+    return created;
+  }
+
+  DayLogModel _buildEmptyDayLog({
+    required String cycleId,
+    required DateTime date,
+  }) {
+    return DayLogModel(
+      id: _dayLogId(cycleId, date),
       cycleId: cycleId,
       date: DateUtilsX.dateKey(date),
-      completedTaskIds: <String>[],
+      completedTaskIds: const <String>[],
       closed: false,
       wasComplete: false,
     );
-    _datasource.saveDayLog(created);
-    return created;
   }
 
   Future<DayLogModel> toggleTaskCompleted({
@@ -184,7 +294,7 @@ class SadhanaRepository {
     required DateTime date,
     required bool completed,
   }) async {
-    final log = getOrCreateDayLog(cycleId: cycleId, date: date);
+    final log = await _ensureDayLog(cycleId: cycleId, date: date);
     if (log.closed) return log;
 
     final ids = List<String>.from(log.completedTaskIds);
@@ -203,7 +313,9 @@ class SadhanaRepository {
     final tasks = getTasksByCycle(cycleId).where((t) => t.isActive).toList();
     if (tasks.isEmpty) return false;
 
-    final log = getOrCreateDayLog(cycleId: cycleId, date: date);
+    final log =
+        getDayLogForDate(cycleId: cycleId, date: date) ??
+        _buildEmptyDayLog(cycleId: cycleId, date: date);
     final completedCount = log.completedTaskIds
         .where((id) => tasks.any((task) => task.id == id))
         .length;
@@ -218,10 +330,10 @@ class SadhanaRepository {
     if (cycle == null) return;
 
     final complete = isDayComplete(cycleId: cycleId, date: date);
-    final log = getOrCreateDayLog(cycleId: cycleId, date: date);
+    final log = await _ensureDayLog(cycleId: cycleId, date: date);
     final closedLog = log.copyWith(closed: true, wasComplete: complete);
 
-    final streak = _streakCalculator.next(
+    final streak = SadhanaRepository._streakCalculator.next(
       current: cycle.streakCurrent,
       max: cycle.streakMax,
       dayComplete: complete,
@@ -321,7 +433,9 @@ class SadhanaRepository {
     }
 
     final tasks = getTasksByCycle(cycle.id).where((t) => t.isActive).toList();
-    final log = getOrCreateDayLog(cycleId: cycle.id, date: date);
+    final log =
+        getDayLogForDate(cycleId: cycle.id, date: date) ??
+        _buildEmptyDayLog(cycleId: cycle.id, date: date);
 
     final done = log.completedTaskIds
         .where((id) => tasks.any((t) => t.id == id))
@@ -348,6 +462,81 @@ class SadhanaRepository {
 
   List<DayLogModel> getLogsByCycle(String cycleId) {
     return _datasource.getDayLogs().where((l) => l.cycleId == cycleId).toList();
+  }
+
+  String _dayLogId(String cycleId, DateTime date) {
+    return '${cycleId}_${DateUtilsX.dateKey(date)}';
+  }
+
+  Map<String, List<String>> _getTaskOrderByCycle() {
+    final raw = _datasource.getSetting(SadhanaRepository._taskOrderByCycleKey);
+    if (raw is! Map) return <String, List<String>>{};
+    final out = <String, List<String>>{};
+    for (final entry in raw.entries) {
+      final key = entry.key.toString();
+      final value = entry.value;
+      if (value is List) {
+        out[key] = value.map((item) => item.toString()).toList(growable: false);
+      }
+    }
+    return out;
+  }
+
+  Future<void> _saveTaskOrderByCycle(Map<String, List<String>> map) async {
+    final serializable = <String, dynamic>{
+      for (final entry in map.entries)
+        entry.key: entry.value.toList(growable: false),
+    };
+    await _datasource.saveSetting(
+      SadhanaRepository._taskOrderByCycleKey,
+      serializable,
+    );
+  }
+
+  Future<void> _appendTaskOrder(String cycleId, String taskId) async {
+    final map = _getTaskOrderByCycle();
+    final current = List<String>.from(map[cycleId] ?? const <String>[]);
+    if (!current.contains(taskId)) {
+      current.add(taskId);
+      map[cycleId] = current;
+      await _saveTaskOrderByCycle(map);
+    }
+  }
+
+  Future<void> _removeTaskFromOrder(String cycleId, String taskId) async {
+    final map = _getTaskOrderByCycle();
+    final current = List<String>.from(map[cycleId] ?? const <String>[]);
+    if (!current.remove(taskId)) return;
+    map[cycleId] = current;
+    await _saveTaskOrderByCycle(map);
+  }
+
+  Future<void> _removeTaskOrderForCycle(String cycleId) async {
+    final map = _getTaskOrderByCycle();
+    if (map.remove(cycleId) == null) return;
+    await _saveTaskOrderByCycle(map);
+  }
+
+  List<T> _applyManualOrder<T>({
+    required List<T> items,
+    required String Function(T item) idOf,
+    required List<String> order,
+    required int Function(T a, T b) fallbackCompare,
+  }) {
+    if (items.length <= 1) return items;
+    final rank = <String, int>{
+      for (var i = 0; i < order.length; i++) order[i]: i,
+    };
+    final sorted = List<T>.from(items);
+    sorted.sort((a, b) {
+      final ra = rank[idOf(a)];
+      final rb = rank[idOf(b)];
+      if (ra != null && rb != null) return ra.compareTo(rb);
+      if (ra != null) return -1;
+      if (rb != null) return 1;
+      return fallbackCompare(a, b);
+    });
+    return sorted;
   }
 
   List<CalendarCustomEvent> getCustomEvents() {
@@ -390,11 +579,14 @@ class SadhanaRepository {
   Map<String, dynamic> getExternalCalendarConfig() {
     final raw = _datasource.getExternalCalendarConfig();
     return {
-      _externalCalendarConnectedKey: raw[_externalCalendarConnectedKey] == true,
-      _externalCalendarSourceUrlKey:
-          (raw[_externalCalendarSourceUrlKey] as String?) ?? '',
-      _externalCalendarLastSyncAtKey:
-          (raw[_externalCalendarLastSyncAtKey] as String?) ?? '',
+      SadhanaRepository._externalCalendarConnectedKey:
+          raw[SadhanaRepository._externalCalendarConnectedKey] == true,
+      SadhanaRepository._externalCalendarSourceUrlKey:
+          (raw[SadhanaRepository._externalCalendarSourceUrlKey] as String?) ??
+          '',
+      SadhanaRepository._externalCalendarLastSyncAtKey:
+          (raw[SadhanaRepository._externalCalendarLastSyncAtKey] as String?) ??
+          '',
     };
   }
 
@@ -402,18 +594,29 @@ class SadhanaRepository {
     final current = getExternalCalendarConfig();
     await _datasource.saveExternalCalendarConfig({
       ...current,
-      _externalCalendarConnectedKey: sourceUrl.trim().isNotEmpty,
-      _externalCalendarSourceUrlKey: sourceUrl.trim(),
+      SadhanaRepository._externalCalendarConnectedKey: sourceUrl
+          .trim()
+          .isNotEmpty,
+      SadhanaRepository._externalCalendarSourceUrlKey: sourceUrl.trim(),
     });
   }
 
   Future<int> syncExternalCalendar() async {
     final config = getExternalCalendarConfig();
-    final sourceUrl = (config[_externalCalendarSourceUrlKey] as String?) ?? '';
+    final sourceUrl =
+        (config[SadhanaRepository._externalCalendarSourceUrlKey] as String?) ??
+        '';
     if (sourceUrl.trim().isEmpty) return 0;
 
     final icsUrl = _resolveExternalCalendarIcsUrl(sourceUrl.trim());
-    final response = await http.get(Uri.parse(icsUrl));
+    http.Response response;
+    try {
+      response = await http
+          .get(Uri.parse(icsUrl))
+          .timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw StateError('Tiempo de espera agotado al descargar calendario.');
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(
         'No se pudo descargar el calendario (HTTP ${response.statusCode}).',
@@ -437,7 +640,8 @@ class SadhanaRepository {
     final current = getExternalCalendarConfig();
     await _datasource.saveExternalCalendarConfig({
       ...current,
-      _externalCalendarLastSyncAtKey: DateTime.now().toIso8601String(),
+      SadhanaRepository._externalCalendarLastSyncAtKey: DateTime.now()
+          .toIso8601String(),
     });
   }
 
@@ -733,7 +937,9 @@ class SadhanaRepository {
     required DateTime date,
   }) {
     final tasks = getTasksByCycle(cycleId).where((t) => t.isActive).toList();
-    final log = getOrCreateDayLog(cycleId: cycleId, date: date);
+    final log =
+        getDayLogForDate(cycleId: cycleId, date: date) ??
+        _buildEmptyDayLog(cycleId: cycleId, date: date);
     final completed = log.completedTaskIds
         .where((id) => tasks.any((t) => t.id == id))
         .length;
@@ -745,8 +951,6 @@ class SadhanaRepository {
       complete: complete,
     );
   }
-
-  // ── Diario ────────────────────────────────────────────────────────────────
 
   DiaryEntryModel getDiaryEntry(DateTime date) {
     final key = DateUtilsX.dateKey(date);
@@ -869,8 +1073,10 @@ class SadhanaRepository {
   }
 
   ({String type, String text})? getHomePhraseSelection() {
-    final type = _datasource.getSetting(_homePhraseTypeKey) as String?;
-    final text = _datasource.getSetting(_homePhraseTextKey) as String?;
+    final type =
+        _datasource.getSetting(SadhanaRepository._homePhraseTypeKey) as String?;
+    final text =
+        _datasource.getSetting(SadhanaRepository._homePhraseTextKey) as String?;
     if (type == null || text == null || text.trim().isEmpty) return null;
     return (type: type, text: text);
   }
@@ -879,8 +1085,8 @@ class SadhanaRepository {
     required String type,
     required String text,
   }) async {
-    await _datasource.saveSetting(_homePhraseTypeKey, type);
-    await _datasource.saveSetting(_homePhraseTextKey, text);
+    await _datasource.saveSetting(SadhanaRepository._homePhraseTypeKey, type);
+    await _datasource.saveSetting(SadhanaRepository._homePhraseTextKey, text);
   }
 
   List<String> getCustomHomePhrases({required String type}) {
@@ -962,22 +1168,26 @@ class SadhanaRepository {
   }
 
   Future<void> clearHomePhraseSelection() async {
-    await _datasource.deleteSetting(_homePhraseTypeKey);
-    await _datasource.deleteSetting(_homePhraseTextKey);
+    await _datasource.deleteSetting(SadhanaRepository._homePhraseTypeKey);
+    await _datasource.deleteSetting(SadhanaRepository._homePhraseTextKey);
   }
 
   ({String nightWarningText, String dayOnlyText}) getMoonCardTexts() {
     final savedNight =
-        (_datasource.getSetting(_moonNightWarningTextKey) as String?)?.trim();
-    final savedDay = (_datasource.getSetting(_moonDayOnlyTextKey) as String?)
-        ?.trim();
+        (_datasource.getSetting(SadhanaRepository._moonNightWarningTextKey)
+                as String?)
+            ?.trim();
+    final savedDay =
+        (_datasource.getSetting(SadhanaRepository._moonDayOnlyTextKey)
+                as String?)
+            ?.trim();
 
     return (
       nightWarningText: (savedNight == null || savedNight.isEmpty)
-          ? defaultMoonNightWarningText
+          ? SadhanaRepository.defaultMoonNightWarningText
           : savedNight,
       dayOnlyText: (savedDay == null || savedDay.isEmpty)
-          ? defaultMoonDayOnlyText
+          ? SadhanaRepository.defaultMoonDayOnlyText
           : savedDay,
     );
   }
@@ -987,13 +1197,16 @@ class SadhanaRepository {
     required String dayOnlyText,
   }) async {
     final night = nightWarningText.trim().isEmpty
-        ? defaultMoonNightWarningText
+        ? SadhanaRepository.defaultMoonNightWarningText
         : nightWarningText.trim();
     final day = dayOnlyText.trim().isEmpty
-        ? defaultMoonDayOnlyText
+        ? SadhanaRepository.defaultMoonDayOnlyText
         : dayOnlyText.trim();
-    await _datasource.saveSetting(_moonNightWarningTextKey, night);
-    await _datasource.saveSetting(_moonDayOnlyTextKey, day);
+    await _datasource.saveSetting(
+      SadhanaRepository._moonNightWarningTextKey,
+      night,
+    );
+    await _datasource.saveSetting(SadhanaRepository._moonDayOnlyTextKey, day);
   }
 
   WednesdayAffirmationModel? getWednesdayAffirmation() {
@@ -1003,7 +1216,9 @@ class SadhanaRepository {
   }
 
   List<WednesdayAffirmationModel> getWednesdayAffirmations() {
-    final raw = _datasource.getSetting(_wednesdayAffirmationKey);
+    final raw = _datasource.getSetting(
+      SadhanaRepository._wednesdayAffirmationKey,
+    );
     final items = <WednesdayAffirmationModel>[];
 
     if (raw is List) {
@@ -1038,7 +1253,7 @@ class SadhanaRepository {
     List<WednesdayAffirmationModel> values,
   ) async {
     await _datasource.saveSetting(
-      _wednesdayAffirmationKey,
+      SadhanaRepository._wednesdayAffirmationKey,
       values.map((item) => item.toMap()).toList(growable: false),
     );
   }
@@ -1053,14 +1268,123 @@ class SadhanaRepository {
   }
 
   String _phraseKeyForType(String type) {
-    return type == 'emanation' ? _customEmanationsKey : _customAffirmationsKey;
+    return type == 'emanation'
+        ? SadhanaRepository._customEmanationsKey
+        : SadhanaRepository._customAffirmationsKey;
   }
 
-  String _dayLogId(String cycleId, DateTime date) {
-    return '${cycleId}_${DateUtilsX.dateKey(date)}';
-  }
+  Future<void> ensureResourceBaseline({bool includeDemoImages = false}) async {
+    var folders = getResourceFolders();
+    if (folders.isEmpty) {
+      await createResourceFolder(name: 'General', circle: 1);
+      folders = getResourceFolders();
+    }
 
-  // ── Notas ─────────────────────────────────────────────────────────────────
+    final cycles = getCycles();
+    final cycleNameById = <String, String>{
+      for (final c in cycles) c.id: c.name,
+    };
+
+    await _upsertSystemFolder(
+      id: SadhanaRepository._audioosVariosFolderId,
+      name: SadhanaRepository._audioosVariosFolderName,
+      circle: 0,
+      clearParentId: true,
+    );
+    await _upsertSystemFolder(
+      id: SadhanaRepository._notesFolderId,
+      name: SadhanaRepository._notesFolderName,
+      circle: 0,
+      clearParentId: true,
+    );
+    await _upsertSystemFolder(
+      id: SadhanaRepository._resourcesCirculosRootId,
+      name: SadhanaRepository._resourcesCirculosRootName,
+      circle: 0,
+      clearParentId: true,
+    );
+
+    const romanByCircle = {
+      1: 'I',
+      2: 'II',
+      3: 'III',
+      4: 'IV',
+      5: 'V',
+      6: 'VI',
+      7: 'VII',
+    };
+    for (var circle = 1; circle <= 7; circle++) {
+      final id = '${SadhanaRepository._resourcesCircleFolderPrefix}$circle';
+      final name =
+          '${SadhanaRepository._resourcesCirculosRootName} / Círculo ${romanByCircle[circle]}';
+      await _upsertSystemFolder(
+        id: id,
+        name: name,
+        circle: circle,
+        parentId: SadhanaRepository._resourcesCirculosRootId,
+      );
+    }
+
+    final legacyToNewFolderId = <String, String>{
+      SadhanaRepository._legacyMandalaAudiosRootId:
+          SadhanaRepository._resourcesCirculosRootId,
+      for (var circle = 1; circle <= 7; circle++)
+        '${SadhanaRepository._legacyMandalaCircleFolderPrefix}$circle':
+            '${SadhanaRepository._resourcesCircleFolderPrefix}$circle',
+    };
+
+    final resourcesBeforeNormalize = getMandalaResources();
+    for (final resource in resourcesBeforeNormalize) {
+      final mapped = legacyToNewFolderId[resource.folderId];
+      if (mapped == null) continue;
+      await saveMandalaResource(resource.copyWith(folderId: mapped));
+    }
+
+    folders = getResourceFolders();
+    final legacyFolderIds = <String>[
+      SadhanaRepository._legacyMandalaAudiosRootId,
+      for (var circle = 1; circle <= 7; circle++)
+        '${SadhanaRepository._legacyMandalaCircleFolderPrefix}$circle',
+    ];
+    for (final legacyId in legacyFolderIds) {
+      if (folders.any((f) => f.id == legacyId)) {
+        await deleteResourceFolder(legacyId);
+      }
+    }
+
+    folders = getResourceFolders();
+    if (folders.isEmpty) {
+      await createResourceFolder(name: 'General', circle: 1);
+      folders = getResourceFolders();
+    }
+    final folderById = <String, ResourceFolderModel>{
+      for (final folder in folders) folder.id: folder,
+    };
+    final fallbackFolderId = folders.first.id;
+    for (final resource in getMandalaResources()) {
+      var targetFolderId = resource.folderId.trim();
+      if (targetFolderId.isEmpty) {
+        targetFolderId = fallbackFolderId;
+      }
+      if (!folderById.containsKey(targetFolderId)) {
+        final folder = ResourceFolderModel(
+          id: targetFolderId,
+          name: cycleNameById[targetFolderId] ?? 'Carpeta',
+          circle: 1,
+          createdAt: DateTime.now().toIso8601String(),
+        );
+        await saveResourceFolder(folder);
+        folderById[targetFolderId] = folder;
+      }
+      if (resource.folderId != targetFolderId) {
+        await saveMandalaResource(resource.copyWith(folderId: targetFolderId));
+      }
+    }
+
+    if (includeDemoImages) {
+      await _ensureDemoImages();
+    }
+  }
 
   List<NoteModel> getNotes() {
     return _datasource.getNotesRaw().map(NoteModel.fromMap).toList()
@@ -1109,6 +1433,15 @@ class SadhanaRepository {
         : all.where((r) => r.cycleId == cycleId).toList();
     filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return filtered;
+  }
+
+  MandalaResourceModel? getMandalaResourceById(String resourceId) {
+    final normalized = resourceId.trim();
+    if (normalized.isEmpty) return null;
+    for (final item in getMandalaResources()) {
+      if (item.id == normalized) return item;
+    }
+    return null;
   }
 
   List<MandalaResourceModel> getMandalaResourcesForFolderOrdered(
@@ -1178,7 +1511,8 @@ class SadhanaRepository {
   }
 
   List<ResourceFolderModel> getResourceFolders() {
-    final raw = _datasource.getSetting(_resourceFoldersKey) as List?;
+    final raw =
+        _datasource.getSetting(SadhanaRepository._resourceFoldersKey) as List?;
     if (raw == null) return <ResourceFolderModel>[];
     final folders = raw
         .whereType<Map>()
@@ -1301,9 +1635,80 @@ class SadhanaRepository {
     );
   }
 
+  Future<void> _upsertSystemFolder({
+    required String id,
+    required String name,
+    required int circle,
+    String? parentId,
+    bool clearParentId = false,
+  }) async {
+    final folders = getResourceFolders();
+    final existing = folders.where((folder) => folder.id == id).firstOrNull;
+    if (existing == null) {
+      await saveResourceFolder(
+        ResourceFolderModel(
+          id: id,
+          name: name,
+          circle: circle,
+          createdAt: DateTime.now().toIso8601String(),
+          parentId: clearParentId ? null : parentId,
+        ),
+      );
+      return;
+    }
+    var next = existing;
+    if (next.name != name) {
+      next = next.copyWith(name: name);
+    }
+    if (next.circle != circle) {
+      next = next.copyWith(circle: circle);
+    }
+    if (clearParentId) {
+      if (next.parentId != null) {
+        next = next.copyWith(clearParentId: true);
+      }
+    } else {
+      final normalizedParent = parentId?.trim();
+      if ((next.parentId?.trim() ?? '') != (normalizedParent ?? '')) {
+        next = next.copyWith(parentId: normalizedParent);
+      }
+    }
+    if (next != existing) {
+      await saveResourceFolder(next);
+    }
+  }
+
+  Future<void> _ensureDemoImages() async {
+    await _upsertSystemFolder(
+      id: SadhanaRepository._demoImagesFolderId,
+      name: SadhanaRepository._demoImagesFolderName,
+      circle: 0,
+      clearParentId: true,
+    );
+    final existingDemoImages = getMandalaResources()
+        .where(
+          (item) =>
+              item.folderId == SadhanaRepository._demoImagesFolderId &&
+              item.type == MandalaResourceType.image,
+        )
+        .toList(growable: false);
+    if (existingDemoImages.isNotEmpty) return;
+    for (var i = 0; i < SadhanaRepository._demoImageUrls.length; i++) {
+      await saveMandalaResource(
+        MandalaResourceModel.create(
+          cycleId: SadhanaRepository._demoImagesFolderId,
+          folderId: SadhanaRepository._demoImagesFolderId,
+          title: 'Imagen demo ${i + 1}',
+          type: MandalaResourceType.image,
+          filePath: SadhanaRepository._demoImageUrls[i],
+        ),
+      );
+    }
+  }
+
   Future<void> _saveResourceFolders(List<ResourceFolderModel> folders) async {
     await _datasource.saveSetting(
-      _resourceFoldersKey,
+      SadhanaRepository._resourceFoldersKey,
       folders.map((f) => f.toMap()).toList(growable: false),
     );
   }
@@ -1312,7 +1717,7 @@ class SadhanaRepository {
     List<String> orderedFolderIds,
   ) async {
     await _datasource.saveSetting(
-      _resourceFoldersOrderKey,
+      SadhanaRepository._resourceFoldersOrderKey,
       orderedFolderIds.toList(growable: false),
     );
   }
@@ -1327,13 +1732,17 @@ class SadhanaRepository {
   }
 
   List<String> _getResourceFoldersOrderIds() {
-    final raw = _datasource.getSetting(_resourceFoldersOrderKey) as List?;
+    final raw =
+        _datasource.getSetting(SadhanaRepository._resourceFoldersOrderKey)
+            as List?;
     if (raw == null) return <String>[];
     return raw.map((item) => item.toString()).toList(growable: false);
   }
 
   Map<String, List<String>> _getResourceItemsOrderByFolder() {
-    final raw = _datasource.getSetting(_resourceItemsOrderByFolderKey);
+    final raw = _datasource.getSetting(
+      SadhanaRepository._resourceItemsOrderByFolderKey,
+    );
     if (raw is! Map) return <String, List<String>>{};
     final out = <String, List<String>>{};
     for (final entry in raw.entries) {
@@ -1353,7 +1762,118 @@ class SadhanaRepository {
       for (final entry in map.entries)
         entry.key: entry.value.toList(growable: false),
     };
-    await _datasource.saveSetting(_resourceItemsOrderByFolderKey, serializable);
+    await _datasource.saveSetting(
+      SadhanaRepository._resourceItemsOrderByFolderKey,
+      serializable,
+    );
+  }
+
+  List<MandalaTemplateModel> getMandalaTemplates({String kind = 'mandala'}) {
+    final raw =
+        _datasource.getSetting(SadhanaRepository._mandalaTemplatesKey) as List?;
+    if (raw == null) return const <MandalaTemplateModel>[];
+    final normalizedKind = kind.trim().toLowerCase();
+    final templates = raw
+        .whereType<Map>()
+        .map(MandalaTemplateModel.fromMap)
+        .where((item) => item.kind.trim().toLowerCase() == normalizedKind)
+        .toList(growable: false);
+    templates.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return templates;
+  }
+
+  Future<void> saveMandalaTemplate(MandalaTemplateModel template) async {
+    final raw =
+        _datasource.getSetting(SadhanaRepository._mandalaTemplatesKey) as List?;
+    final current = raw == null
+        ? <MandalaTemplateModel>[]
+        : raw
+              .whereType<Map>()
+              .map(MandalaTemplateModel.fromMap)
+              .toList(growable: true);
+    final next = <MandalaTemplateModel>[];
+    var found = false;
+    final updated = template.copyWith(
+      updatedAt: DateTime.now().toIso8601String(),
+    );
+    for (final item in current) {
+      if (item.id == updated.id) {
+        next.add(updated);
+        found = true;
+      } else {
+        next.add(item);
+      }
+    }
+    if (!found) next.add(updated);
+    await _datasource.saveSetting(
+      SadhanaRepository._mandalaTemplatesKey,
+      next.map((item) => item.toMap()).toList(growable: false),
+    );
+  }
+
+  Future<void> deleteMandalaTemplate(String templateId) async {
+    final raw =
+        _datasource.getSetting(SadhanaRepository._mandalaTemplatesKey) as List?;
+    if (raw == null) return;
+    final next = raw
+        .whereType<Map>()
+        .map(MandalaTemplateModel.fromMap)
+        .where((item) => item.id != templateId)
+        .toList(growable: false);
+    await _datasource.saveSetting(
+      SadhanaRepository._mandalaTemplatesKey,
+      next.map((item) => item.toMap()).toList(growable: false),
+    );
+  }
+
+  TaskProgressModel getTaskProgress({
+    required String cycleId,
+    required String taskId,
+  }) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return const TaskProgressModel(
+        taskId: '',
+        totalTrackedDays: 0,
+        completedDays: 0,
+        failedDays: 0,
+        currentStreak: 0,
+        maxStreak: 0,
+      );
+    }
+    final logs = getLogsByCycle(
+      cycleId,
+    ).where((log) => log.closed).toList(growable: false);
+    logs.sort((a, b) => a.date.compareTo(b.date));
+    var completed = 0;
+    var failed = 0;
+    var currentStreak = 0;
+    var maxStreak = 0;
+    var rolling = 0;
+    for (final log in logs) {
+      final done = log.completedTaskIds.contains(normalizedTaskId);
+      if (done) {
+        completed += 1;
+        rolling += 1;
+        if (rolling > maxStreak) maxStreak = rolling;
+      } else {
+        failed += 1;
+        rolling = 0;
+      }
+    }
+    for (final log in logs.reversed) {
+      final done = log.completedTaskIds.contains(normalizedTaskId);
+      if (!done) break;
+      currentStreak += 1;
+    }
+    return TaskProgressModel(
+      taskId: normalizedTaskId,
+      totalTrackedDays: logs.length,
+      completedDays: completed,
+      failedDays: failed,
+      currentStreak: currentStreak,
+      maxStreak: maxStreak,
+    );
   }
 
   Future<void> _appendResourceFolderOrder(String folderId) async {
@@ -1432,12 +1952,16 @@ class SadhanaRepository {
     }
 
     final target = List<String>.from(map[saved.folderId] ?? const <String>[]);
+    if (isNew && target.isEmpty) {
+      // Seed de orden inicial para evitar que un recurso nuevo aparezca
+      // primero cuando aún no existe orden manual en la carpeta.
+      final existingIds = getMandalaResourcesForFolderOrdered(
+        saved.folderId,
+      ).where((item) => item.id != saved.id).map((item) => item.id);
+      target.addAll(existingIds);
+    }
     if (!target.contains(saved.id)) {
-      if (isNew) {
-        target.insert(0, saved.id);
-      } else {
-        target.add(saved.id);
-      }
+      target.add(saved.id);
       map[saved.folderId] = target;
       await _saveResourceItemsOrderByFolder(map);
       return;
@@ -1445,28 +1969,6 @@ class SadhanaRepository {
     if (map.isNotEmpty) {
       await _saveResourceItemsOrderByFolder(map);
     }
-  }
-
-  List<T> _applyManualOrder<T>({
-    required List<T> items,
-    required String Function(T item) idOf,
-    required List<String> order,
-    required int Function(T a, T b) fallbackCompare,
-  }) {
-    if (items.length <= 1) return items;
-    final rank = <String, int>{
-      for (var i = 0; i < order.length; i++) order[i]: i,
-    };
-    final sorted = List<T>.from(items);
-    sorted.sort((a, b) {
-      final ra = rank[idOf(a)];
-      final rb = rank[idOf(b)];
-      if (ra != null && rb != null) return ra.compareTo(rb);
-      if (ra != null) return -1;
-      if (rb != null) return 1;
-      return fallbackCompare(a, b);
-    });
-    return sorted;
   }
 }
 

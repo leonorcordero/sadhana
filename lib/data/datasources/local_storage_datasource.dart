@@ -203,52 +203,151 @@ class LocalStorageDatasource {
   }
 
   Future<void> importAllFromJsonMap(Map<String, dynamic> payload) async {
-    final cycles =
-        (payload['cycles'] as List?)
-            ?.map((e) => Map<String, dynamic>.from(e as Map))
-            .toList() ??
-        <Map<String, dynamic>>[];
-    final tasks =
-        (payload['tasks'] as List?)
-            ?.map((e) => Map<String, dynamic>.from(e as Map))
-            .toList() ??
-        <Map<String, dynamic>>[];
-    final dayLogs =
-        (payload['dayLogs'] as List?)
-            ?.map((e) => Map<String, dynamic>.from(e as Map))
-            .toList() ??
-        <Map<String, dynamic>>[];
-    final settings = Map<String, dynamic>.from(
-      (payload['settings'] as Map?) ?? {},
-    );
+    final cycles = _readRowsWithId(payload, key: 'cycles');
+    final tasks = _readRowsWithId(payload, key: 'tasks');
+    final dayLogs = _readRowsWithId(payload, key: 'dayLogs');
+    final settings = _readSettingsMap(payload);
+    _validateEntityRows(cycles, tasks, dayLogs);
+    final backupCycles = _snapshotMapBox(_cycleBox);
+    final backupTasks = _snapshotMapBox(_taskBox);
+    final backupDayLogs = _snapshotMapBox(_dayLogBox);
+    final backupSettings = Map<dynamic, dynamic>.from(_settingsBox.toMap());
 
+    try {
+      await _replaceAllData(
+        cycles: cycles,
+        tasks: tasks,
+        dayLogs: dayLogs,
+        settings: settings,
+      );
+    } catch (error) {
+      await _restoreBackup(
+        cycles: backupCycles,
+        tasks: backupTasks,
+        dayLogs: backupDayLogs,
+        settings: backupSettings,
+      );
+      rethrow;
+    }
+  }
+
+  void _validateEntityRows(
+    List<Map<String, dynamic>> cycles,
+    List<Map<String, dynamic>> tasks,
+    List<Map<String, dynamic>> dayLogs,
+  ) {
+    try {
+      for (final row in cycles) {
+        CycleModel.fromMap(row);
+      }
+      for (final row in tasks) {
+        TaskModel.fromMap(row);
+      }
+      for (final row in dayLogs) {
+        DayLogModel.fromMap(row);
+      }
+    } catch (_) {
+      throw const FormatException('Estructura de backup inválida');
+    }
+  }
+
+  List<Map<String, dynamic>> _readRowsWithId(
+    Map<String, dynamic> payload, {
+    required String key,
+  }) {
+    final raw = payload[key];
+    if (raw == null) return <Map<String, dynamic>>[];
+    if (raw is! List) {
+      throw FormatException('Campo "$key" inválido en backup');
+    }
+    final rows = <Map<String, dynamic>>[];
+    for (final item in raw) {
+      if (item is! Map) {
+        throw FormatException('Elemento inválido en "$key"');
+      }
+      final map = Map<String, dynamic>.from(item);
+      final id = map['id'];
+      if (id is! String || id.trim().isEmpty) {
+        throw FormatException('Elemento sin id válido en "$key"');
+      }
+      rows.add(map);
+    }
+    return rows;
+  }
+
+  Map<String, dynamic> _readSettingsMap(Map<String, dynamic> payload) {
+    final raw = payload['settings'];
+    if (raw == null) return <String, dynamic>{};
+    if (raw is! Map) {
+      throw const FormatException('Campo "settings" inválido en backup');
+    }
+    final out = <String, dynamic>{};
+    for (final entry in raw.entries) {
+      final key = entry.key.toString().trim();
+      if (key.isEmpty) continue;
+      out[key] = entry.value;
+    }
+    return out;
+  }
+
+  Map<String, Map<String, dynamic>> _snapshotMapBox(Box<Map> box) {
+    final out = <String, Map<String, dynamic>>{};
+    for (final entry in box.toMap().entries) {
+      final key = entry.key.toString();
+      out[key] = Map<String, dynamic>.from(entry.value);
+    }
+    return out;
+  }
+
+  Future<void> _replaceAllData({
+    required List<Map<String, dynamic>> cycles,
+    required List<Map<String, dynamic>> tasks,
+    required List<Map<String, dynamic>> dayLogs,
+    required Map<String, dynamic> settings,
+  }) async {
     await _cycleBox.clear();
     await _taskBox.clear();
     await _dayLogBox.clear();
     await _settingsBox.clear();
 
     for (final row in cycles) {
-      final id = row['id'] as String?;
-      if (id != null) {
-        await _cycleBox.put(id, row);
-      }
+      await _cycleBox.put(row['id'] as String, row);
     }
     for (final row in tasks) {
-      final id = row['id'] as String?;
-      if (id != null) {
-        await _taskBox.put(id, row);
-      }
+      await _taskBox.put(row['id'] as String, row);
     }
     for (final row in dayLogs) {
-      final id = row['id'] as String?;
-      if (id != null) {
-        await _dayLogBox.put(id, row);
-      }
+      await _dayLogBox.put(row['id'] as String, row);
     }
     for (final entry in settings.entries) {
       await _settingsBox.put(entry.key, entry.value);
     }
     await _settingsBox.put(_schemaVersionKey, _currentSchemaVersion);
+  }
+
+  Future<void> _restoreBackup({
+    required Map<String, Map<String, dynamic>> cycles,
+    required Map<String, Map<String, dynamic>> tasks,
+    required Map<String, Map<String, dynamic>> dayLogs,
+    required Map<dynamic, dynamic> settings,
+  }) async {
+    await _cycleBox.clear();
+    await _taskBox.clear();
+    await _dayLogBox.clear();
+    await _settingsBox.clear();
+
+    for (final entry in cycles.entries) {
+      await _cycleBox.put(entry.key, entry.value);
+    }
+    for (final entry in tasks.entries) {
+      await _taskBox.put(entry.key, entry.value);
+    }
+    for (final entry in dayLogs.entries) {
+      await _dayLogBox.put(entry.key, entry.value);
+    }
+    for (final entry in settings.entries) {
+      await _settingsBox.put(entry.key, entry.value);
+    }
   }
 
   Future<void> _runMigrations() async {

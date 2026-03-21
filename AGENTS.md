@@ -41,6 +41,10 @@ Garantizar persistencia de datos **local** entre actualizaciones de la app en el
 - Ningún cambio de UI o feature puede comprometer persistencia existente.
 - Si hay duda, priorizar compatibilidad de datos sobre refactor visual.
 
+9. No pérdida de datos al actualizar en teléfono
+- Al actualizar la app en el teléfono del usuario, no se debe eliminar ningún recurso ni configuración cargada por el usuario.
+- Se debe conservar toda la información del usuario entre versiones.
+
 ## Checklist para cada cambio con datos
 - ¿Cambió modelo o key? -> agregar migración.
 - ¿`fromMap` soporta datos viejos? -> verificar defaults.

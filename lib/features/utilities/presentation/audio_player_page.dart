@@ -244,7 +244,7 @@ class _AudioPlayerPageState extends ConsumerState<AudioPlayerPage> {
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: cs.outlineVariant),
+                  side: BorderSide.none,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -372,7 +372,7 @@ class _AudioPlayerPageState extends ConsumerState<AudioPlayerPage> {
                     margin: const EdgeInsets.only(bottom: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(color: cs.outlineVariant),
+                      side: BorderSide.none,
                     ),
                     child: ListTile(
                       leading: Icon(
@@ -452,9 +452,7 @@ class _RepeatModeChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? cs.primary.withValues(alpha: 0.14) : cs.surface,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected ? cs.primary : cs.outlineVariant,
-            ),
+            border: Border.all(color: Colors.transparent),
           ),
           child: Icon(
             icon,

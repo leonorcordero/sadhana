@@ -142,7 +142,7 @@ class _AudioRecorderPageState extends ConsumerState<AudioRecorderPage> {
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: cs.outlineVariant),
+                  side: BorderSide.none,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -195,7 +195,7 @@ class _AudioRecorderPageState extends ConsumerState<AudioRecorderPage> {
                       margin: const EdgeInsets.only(bottom: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(color: cs.outlineVariant),
+                        side: BorderSide.none,
                       ),
                       child: ListTile(
                         leading: Icon(Icons.mic_outlined, color: cs.primary),

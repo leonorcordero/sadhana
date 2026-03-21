@@ -17,9 +17,15 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   late TextEditingController _nameController;
   late TextEditingController _customReminderController;
+  late TextEditingController _driveFolderController;
   String _lastBackupActionAt = '';
   String _appVersion = '-';
   String _buildNumber = '-';
+  bool _driveEnabled = false;
+  bool _driveConnected = false;
+  String? _driveAccountEmail;
+  String _driveLastSyncAt = '';
+  bool _driveSyncRunning = false;
 
   @override
   void initState() {
@@ -29,6 +35,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _customReminderController = TextEditingController(
       text: ref.read(appSettingsProvider).customReminderText,
     );
+    _driveFolderController = TextEditingController();
     _lastBackupActionAt =
         (ref
                 .read(localStorageDatasourceProvider)
@@ -36,6 +43,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             as String?) ??
         '';
     _loadAppInfo();
+    _loadDriveStatus();
   }
 
   Future<void> _loadAppInfo() async {
@@ -51,6 +59,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   void dispose() {
     _nameController.dispose();
     _customReminderController.dispose();
+    _driveFolderController.dispose();
     super.dispose();
   }
 
@@ -272,47 +281,59 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                   ],
                   const SizedBox(height: 8),
-                  _HourPickerRow(
-                    title: 'Hora 1',
-                    value: settings.reminderHours.isNotEmpty
-                        ? settings.reminderHours[0]
-                        : 9,
-                    onChanged: (value) {
-                      final next = List<int>.from(settings.reminderHours);
-                      while (next.length < 3) {
-                        next.add(9);
-                      }
-                      next[0] = value;
+                  ...List.generate(settings.reminderHours.length, (index) {
+                    final hour = settings.reminderHours[index].clamp(0, 23);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          SizedBox(width: 64, child: Text('Hora ${index + 1}')),
+                          const SizedBox(width: 8),
+                          DropdownButton<int>(
+                            value: hour,
+                            items: List.generate(
+                              24,
+                              (h) => DropdownMenuItem<int>(
+                                value: h,
+                                child: Text(
+                                  '${h.toString().padLeft(2, '0')}:00',
+                                ),
+                              ),
+                            ),
+                            onChanged: (next) {
+                              if (next == null) return;
+                              final updated = List<int>.from(
+                                settings.reminderHours,
+                              );
+                              updated[index] = next;
+                              notifier.setReminderHours(updated);
+                            },
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: 'Quitar horario',
+                            onPressed: settings.reminderHours.length <= 1
+                                ? null
+                                : () {
+                                    final updated = List<int>.from(
+                                      settings.reminderHours,
+                                    )..removeAt(index);
+                                    notifier.setReminderHours(updated);
+                                  },
+                            icon: const Icon(Icons.remove_circle_outline),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  TextButton.icon(
+                    onPressed: () {
+                      final next = List<int>.from(settings.reminderHours)
+                        ..add(9);
                       notifier.setReminderHours(next);
                     },
-                  ),
-                  _HourPickerRow(
-                    title: 'Hora 2',
-                    value: settings.reminderHours.length > 1
-                        ? settings.reminderHours[1]
-                        : 14,
-                    onChanged: (value) {
-                      final next = List<int>.from(settings.reminderHours);
-                      while (next.length < 3) {
-                        next.add(14);
-                      }
-                      next[1] = value;
-                      notifier.setReminderHours(next);
-                    },
-                  ),
-                  _HourPickerRow(
-                    title: 'Hora 3',
-                    value: settings.reminderHours.length > 2
-                        ? settings.reminderHours[2]
-                        : 20,
-                    onChanged: (value) {
-                      final next = List<int>.from(settings.reminderHours);
-                      while (next.length < 3) {
-                        next.add(20);
-                      }
-                      next[2] = value;
-                      notifier.setReminderHours(next);
-                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Agregar horario'),
                   ),
                 ],
               ],
@@ -350,6 +371,91 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const SizedBox(height: 16),
 
           _SectionCard(
+            label: 'GOOGLE DRIVE (OPCIONAL)',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Activar sincronización con Drive'),
+                  subtitle: const Text('Backup sin cifrado'),
+                  value: _driveEnabled,
+                  onChanged: (value) async {
+                    await ref.read(driveSyncServiceProvider).setEnabled(value);
+                    if (!mounted) return;
+                    setState(() {
+                      _driveEnabled = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                if (_driveConnected) ...[
+                  Text(
+                    'Conectado: ${_driveAccountEmail ?? '-'}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _disconnectDrive,
+                    icon: const Icon(Icons.logout_outlined),
+                    label: const Text('Desconectar cuenta'),
+                  ),
+                ] else ...[
+                  OutlinedButton.icon(
+                    onPressed: _connectDrive,
+                    icon: const Icon(Icons.login_outlined),
+                    label: const Text('Conectar cuenta Google'),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _driveFolderController,
+                  decoration: InputDecoration(
+                    labelText: 'Folder ID de Drive',
+                    hintText: '1AbCdEf...',
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.check),
+                      onPressed: _saveDriveFolderId,
+                    ),
+                  ),
+                  onSubmitted: (_) => _saveDriveFolderId(),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: _driveSyncRunning ? null : _syncDriveNow,
+                      icon: const Icon(Icons.sync_outlined),
+                      label: Text(
+                        _driveSyncRunning
+                            ? 'Sincronizando...'
+                            : 'Sincronizar ahora',
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _importBackupFromDrive,
+                      icon: const Icon(Icons.download_outlined),
+                      label: const Text('Restaurar desde Drive'),
+                    ),
+                  ],
+                ),
+                if (_driveLastSyncAt.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Última sync Drive: $_driveLastSyncAt',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          _SectionCard(
             label: 'APP',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -363,6 +469,146 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _loadDriveStatus() async {
+    final status = await ref.read(driveSyncServiceProvider).getStatus();
+    if (!mounted) return;
+    setState(() {
+      _driveEnabled = status.enabled;
+      _driveConnected = status.connected;
+      _driveAccountEmail = status.accountEmail;
+      _driveFolderController.text = status.folderId;
+      _driveLastSyncAt = status.lastSyncAt;
+    });
+  }
+
+  Future<void> _connectDrive() async {
+    try {
+      final email = await ref.read(driveSyncServiceProvider).connect();
+      if (!mounted) return;
+      setState(() {
+        _driveConnected = email != null && email.isNotEmpty;
+        _driveAccountEmail = email;
+      });
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      final code = e.code.toLowerCase();
+      final message = (e.message ?? '').toLowerCase();
+      final signInCode10 =
+          code == 'sign_in_failed' &&
+          (message.contains('10') || e.toString().contains(' 10:'));
+      final errorText = signInCode10
+          ? 'No se pudo conectar Drive (Google Sign-In code 10). '
+                'Revisa OAuth de Android: packageName + SHA-1 de firma.'
+          : 'No se pudo conectar Drive: $e';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errorText)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo conectar Drive: $e')));
+    }
+  }
+
+  Future<void> _disconnectDrive() async {
+    await ref.read(driveSyncServiceProvider).disconnect();
+    if (!mounted) return;
+    setState(() {
+      _driveConnected = false;
+      _driveAccountEmail = null;
+    });
+  }
+
+  Future<void> _saveDriveFolderId() async {
+    await ref
+        .read(driveSyncServiceProvider)
+        .setFolderId(_driveFolderController.text);
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Folder ID guardado')));
+  }
+
+  Future<void> _syncDriveNow() async {
+    try {
+      setState(() => _driveSyncRunning = true);
+      final report = await ref.read(driveSyncServiceProvider).syncNow();
+      await _loadDriveStatus();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Sync lista. Subidos: ${report.uploadedResources}, bajados: ${report.downloadedResources}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Sync Drive falló: $e')));
+    } finally {
+      if (mounted) setState(() => _driveSyncRunning = false);
+    }
+  }
+
+  Future<void> _importBackupFromDrive() async {
+    final repository = ref.read(repositoryProvider);
+    final appController = ref.read(appControllerProvider.notifier);
+    try {
+      final raw = await ref
+          .read(driveSyncServiceProvider)
+          .downloadBackupJsonFromDrive();
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Restaurar desde Drive'),
+          content: const Text(
+            'Esta acción reemplazará todos los datos locales con el backup de Drive.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Restaurar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
+      await repository.importBackupJson(raw);
+      final now = DateTime.now().toIso8601String();
+      await ref
+          .read(localStorageDatasourceProvider)
+          .saveSetting('backup_last_action_at', now);
+      if (mounted) {
+        setState(() => _lastBackupActionAt = now);
+      }
+      await appController.initialize(
+        remindersEnabled: ref.read(appSettingsProvider).remindersEnabled,
+        reminderHours: ref.read(appSettingsProvider).reminderHours,
+        reminderContentType: ref.read(appSettingsProvider).reminderContentType,
+        customReminderText: ref.read(appSettingsProvider).customReminderText,
+        forceResourceBaseline: true,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Backup restaurado desde Drive')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo restaurar desde Drive: $e')),
+      );
+    }
   }
 
   Future<void> _exportBackup() async {
@@ -480,6 +726,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   customReminderText: ref
                       .read(appSettingsProvider)
                       .customReminderText,
+                  forceResourceBaseline: true,
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
               } catch (_) {
@@ -506,12 +753,11 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: cs.outlineVariant),
+        side: BorderSide.none,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -547,43 +793,8 @@ class _ToneDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        border: Border.all(color: Colors.transparent),
       ),
-    );
-  }
-}
-
-class _HourPickerRow extends StatelessWidget {
-  const _HourPickerRow({
-    required this.title,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String title;
-  final int value;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(width: 64, child: Text(title)),
-        const SizedBox(width: 8),
-        DropdownButton<int>(
-          value: value.clamp(0, 23).toInt(),
-          items: List.generate(
-            24,
-            (h) => DropdownMenuItem<int>(
-              value: h,
-              child: Text('${h.toString().padLeft(2, '0')}:00'),
-            ),
-          ),
-          onChanged: (next) {
-            if (next != null) onChanged(next);
-          },
-        ),
-      ],
     );
   }
 }

@@ -4,7 +4,6 @@ class AppTheme {
   /// Color sage por defecto (coincide con AppSettings.defaultColor).
   static const defaultSeed = Color(0xFF5A7D5A);
   static const _beige = Color(0xFFF7F3EF);
-  static const _border = Color(0xFFE8E3DE);
 
   static ThemeData light({Color? seed}) {
     final seedColor = seed ?? defaultSeed;
@@ -115,16 +114,44 @@ class AppTheme {
       displayColor: cs.onSurface,
     );
 
+    final scaffoldTone = Color.alphaBlend(
+      seedColor.withValues(alpha: 0.08),
+      _beige,
+    );
+    final cardColor = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.85),
+      scaffoldTone,
+    );
+    final inputFill = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.76),
+      scaffoldTone,
+    );
+    final appBarColor = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.64),
+      scaffoldTone,
+    );
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
       textTheme: readableTextTheme,
-      scaffoldBackgroundColor: _beige,
+      scaffoldBackgroundColor: scaffoldTone,
+      splashFactory: InkSparkle.splashFactory,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+        },
+      ),
       // ── AppBar ─────────────────────────────────────────────────────────────
       appBarTheme: AppBarTheme(
         centerTitle: false,
-        backgroundColor: _beige,
+        backgroundColor: appBarColor,
         surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         titleTextStyle: TextStyle(
@@ -136,14 +163,14 @@ class AppTheme {
         iconTheme: IconThemeData(color: cs.primary),
         actionsIconTheme: IconThemeData(color: cs.primary),
       ),
-      // ── Cards: 24 px de radio, borde sutil, sin sombra ────────────────────
+      // ── Cards: 24 px de radio, sin borde, sin sombra ──────────────────────
       cardTheme: CardThemeData(
-        elevation: 0,
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: _border),
-        ),
+        elevation: 1,
+        shadowColor: Colors.black.withValues(alpha: 0.06),
+        surfaceTintColor: Colors.transparent,
+        color: cardColor,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
       // ── Botones rellenos: 16 px de radio ──────────────────────────────────
       filledButtonTheme: FilledButtonThemeData(
@@ -153,8 +180,22 @@ class AppTheme {
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
+          minimumSize: const Size(0, 46),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          elevation: 0,
+          backgroundColor: cs.primary,
+          foregroundColor: cs.onPrimary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: cs.primary,
+          backgroundColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
           ),
         ),
       ),
@@ -165,6 +206,7 @@ class AppTheme {
             fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -177,29 +219,46 @@ class AppTheme {
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
+          minimumSize: const Size(0, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          side: BorderSide.none,
+          backgroundColor: cs.surfaceContainerHigh,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
         ),
       ),
-      // ── Inputs: 16 px de radio ─────────────────────────────────────────────
+      // ── Inputs: 16 px de radio, sin borde visible ─────────────────────────
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: inputFill,
         labelStyle: TextStyle(fontFamily: inter, color: cs.onSurfaceVariant),
         hintStyle: TextStyle(fontFamily: inter, color: cs.onSurfaceVariant),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: _border),
+          borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: _border),
+          borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: cs.primary, width: 2),
+          borderSide: BorderSide.none,
         ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: cs.surface,
+        contentTextStyle: readableTextTheme.bodyMedium?.copyWith(
+          color: cs.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       // ── Chips ──────────────────────────────────────────────────────────────
       chipTheme: const ChipThemeData(shape: StadiumBorder()),
@@ -238,6 +297,8 @@ class AppTheme {
       // ── NavigationBar ──────────────────────────────────────────────────────
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: cs.primary,
+        elevation: 0,
+        shadowColor: Colors.transparent,
         indicatorColor: cs.onPrimary.withValues(alpha: 0.16),
         labelTextStyle: WidgetStateProperty.all(
           TextStyle(
@@ -257,12 +318,12 @@ class AppTheme {
       ),
       checkboxTheme: CheckboxThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        side: BorderSide(color: cs.outline),
+        side: BorderSide.none,
       ),
       dividerTheme: DividerThemeData(
-        color: cs.outlineVariant,
-        thickness: 1,
-        space: 1,
+        color: Colors.transparent,
+        thickness: 0,
+        space: 0,
       ),
     );
   }

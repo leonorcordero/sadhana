@@ -13,6 +13,9 @@ import 'package:sadhana/features/resources/presentation/resources_page.dart';
 import 'package:sadhana/features/resources/presentation/wednesday_affirmation_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+part 'resources_library_page_components.dart';
+part 'resources_library_page_folder.dart';
+
 const _romanByCircle = {
   1: 'I',
   2: 'II',
@@ -23,14 +26,8 @@ const _romanByCircle = {
   7: 'VII',
 };
 const _audioosVariosFolderId = 'audioos-varios';
-const _audioosVariosFolderName = 'Audios varios';
-const _notesFolderId = 'notas-root';
-const _notesFolderName = 'Notas';
 const _resourcesCirculosRootId = 'recursos-circulos-root';
 const _resourcesCirculosRootName = 'Recursos círculos';
-const _resourcesCircleFolderPrefix = 'recursos-circulos-circle-';
-const _legacyMandalaAudiosRootId = 'audios-mandalas-root';
-const _legacyMandalaCircleFolderPrefix = 'audios-mandalas-circle-';
 
 String _circleLabel(int circle) {
   if (circle <= 0) return 'Sin círculo';
@@ -48,6 +45,9 @@ class ResourcesLibraryPage extends ConsumerStatefulWidget {
 class _ResourcesLibraryPageState extends ConsumerState<ResourcesLibraryPage> {
   List<ResourceFolderModel> _folders = <ResourceFolderModel>[];
   Map<String, int> _countsByFolder = <String, int>{};
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  final Set<MandalaResourceType> _quickFilters = <MandalaResourceType>{};
 
   @override
   void initState() {
@@ -55,9 +55,14 @@ class _ResourcesLibraryPageState extends ConsumerState<ResourcesLibraryPage> {
     _reload();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _reload() async {
     final repo = ref.read(repositoryProvider);
-    await _ensureBaseline(repo);
 
     final folders = repo.getResourceFolders();
     final items = repo.getMandalaResources();
@@ -75,176 +80,117 @@ class _ResourcesLibraryPageState extends ConsumerState<ResourcesLibraryPage> {
     });
   }
 
-  Future<void> _ensureBaseline(SadhanaRepository repo) async {
-    var folders = repo.getResourceFolders();
-    final resources = repo.getMandalaResources();
-    final cycles = repo.getCycles();
-    final cycleNameById = <String, String>{
-      for (final c in cycles) c.id: c.name,
-    };
-
-    if (folders.isEmpty) {
-      await repo.createResourceFolder(name: 'General', circle: 1);
-      folders = repo.getResourceFolders();
-    }
-
-    final hasAudioosVarios = folders.any((f) => f.id == _audioosVariosFolderId);
-    if (!hasAudioosVarios) {
-      await repo.saveResourceFolder(
-        ResourceFolderModel(
-          id: _audioosVariosFolderId,
-          name: _audioosVariosFolderName,
-          circle: 0,
-          createdAt: DateTime.now().toIso8601String(),
-        ),
-      );
-    } else {
-      final existing = folders.firstWhere(
-        (f) => f.id == _audioosVariosFolderId,
-      );
-      if (existing.name != _audioosVariosFolderName) {
-        await repo.saveResourceFolder(
-          existing.copyWith(name: _audioosVariosFolderName),
-        );
-      }
-    }
-
-    final hasNotesFolder = folders.any((f) => f.id == _notesFolderId);
-    if (!hasNotesFolder) {
-      await repo.saveResourceFolder(
-        ResourceFolderModel(
-          id: _notesFolderId,
-          name: _notesFolderName,
-          circle: 0,
-          createdAt: DateTime.now().toIso8601String(),
-        ),
-      );
-    } else {
-      final existing = folders.firstWhere((f) => f.id == _notesFolderId);
-      if (existing.name != _notesFolderName) {
-        await repo.saveResourceFolder(
-          existing.copyWith(name: _notesFolderName),
-        );
-      }
-    }
-
-    final hasResourcesCirculosRoot = folders.any(
-      (f) => f.id == _resourcesCirculosRootId,
-    );
-    if (!hasResourcesCirculosRoot) {
-      await repo.saveResourceFolder(
-        ResourceFolderModel(
-          id: _resourcesCirculosRootId,
-          name: _resourcesCirculosRootName,
-          circle: 0,
-          createdAt: DateTime.now().toIso8601String(),
-          parentId: null,
-        ),
-      );
-    } else {
-      final existing = folders.firstWhere(
-        (f) => f.id == _resourcesCirculosRootId,
-      );
-      if (existing.name != _resourcesCirculosRootName ||
-          existing.parentId != null) {
-        await repo.saveResourceFolder(
-          existing.copyWith(
-            name: _resourcesCirculosRootName,
-            clearParentId: true,
-          ),
-        );
-      }
-    }
-
-    for (var circle = 1; circle <= 7; circle++) {
-      final id = '$_resourcesCircleFolderPrefix$circle';
-      final name =
-          '$_resourcesCirculosRootName / Círculo ${_romanByCircle[circle]}';
-      final hasFolder = folders.any((f) => f.id == id);
-      if (!hasFolder) {
-        await repo.saveResourceFolder(
-          ResourceFolderModel(
-            id: id,
-            name: name,
-            circle: circle,
-            createdAt: DateTime.now().toIso8601String(),
-            parentId: _resourcesCirculosRootId,
-          ),
-        );
+  void _toggleQuickFilter(MandalaResourceType type) {
+    setState(() {
+      if (_quickFilters.contains(type)) {
+        _quickFilters.remove(type);
       } else {
-        final existing = folders.firstWhere((f) => f.id == id);
-        if (existing.name != name ||
-            existing.parentId != _resourcesCirculosRootId) {
-          await repo.saveResourceFolder(
-            existing.copyWith(name: name, parentId: _resourcesCirculosRootId),
-          );
-        }
+        _quickFilters.add(type);
       }
+    });
+  }
+
+  bool _matchesResourceSearch({
+    required MandalaResourceModel item,
+    required String query,
+    required Map<String, ResourceFolderModel> folderById,
+  }) {
+    if (_quickFilters.isNotEmpty && !_quickFilters.contains(item.type)) {
+      return false;
     }
+    if (query.isEmpty) return true;
+    final title = item.title.toLowerCase();
+    final folder = (folderById[item.folderId]?.name ?? '').toLowerCase();
+    final type = _labelForType(item.type).toLowerCase();
+    return title.contains(query) ||
+        folder.contains(query) ||
+        type.contains(query);
+  }
 
-    final legacyToNewFolderId = <String, String>{
-      _legacyMandalaAudiosRootId: _resourcesCirculosRootId,
-      for (var circle = 1; circle <= 7; circle++)
-        '$_legacyMandalaCircleFolderPrefix$circle':
-            '$_resourcesCircleFolderPrefix$circle',
-    };
-
-    for (final resource in resources) {
-      final legacyMapped = legacyToNewFolderId[resource.folderId];
-      if (legacyMapped != null) {
-        await repo.saveMandalaResource(
-          resource.copyWith(folderId: legacyMapped),
-        );
-      }
+  Future<void> _openResourceFromSearch(MandalaResourceModel item) async {
+    if (_isLinkResource(item)) {
+      await _openLinkResource(item);
+      return;
     }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ResourceViewerPage(resource: item)),
+    );
+  }
 
-    folders = repo.getResourceFolders();
-    final legacyFolderIds = <String>[
-      _legacyMandalaAudiosRootId,
-      for (var circle = 1; circle <= 7; circle++)
-        '$_legacyMandalaCircleFolderPrefix$circle',
-    ];
-    for (final legacyId in legacyFolderIds) {
-      if (folders.any((f) => f.id == legacyId)) {
-        await repo.deleteResourceFolder(legacyId);
-      }
+  String _labelForType(MandalaResourceType type) {
+    switch (type) {
+      case MandalaResourceType.audio:
+        return 'Audio';
+      case MandalaResourceType.image:
+        return 'Imagen';
+      case MandalaResourceType.text:
+        return 'Texto';
+      case MandalaResourceType.pdf:
+        return 'PDF';
+      case MandalaResourceType.other:
+        return 'Archivo';
     }
+  }
 
-    folders = repo.getResourceFolders();
-    final folderById = <String, ResourceFolderModel>{
-      for (final folder in folders) folder.id: folder,
-    };
-
-    final fallbackFolder = folders.first;
-    for (final resource in resources) {
-      var targetFolderId = resource.folderId.trim();
-      if (targetFolderId.isEmpty) {
-        targetFolderId = fallbackFolder.id;
-      }
-
-      if (!folderById.containsKey(targetFolderId)) {
-        final folder = ResourceFolderModel(
-          id: targetFolderId,
-          name: cycleNameById[targetFolderId] ?? 'Carpeta',
-          circle: 1,
-          createdAt: DateTime.now().toIso8601String(),
-        );
-        await repo.saveResourceFolder(folder);
-        folderById[targetFolderId] = folder;
-      }
-
-      if (resource.folderId != targetFolderId) {
-        await repo.saveMandalaResource(
-          resource.copyWith(folderId: targetFolderId),
-        );
-      }
+  IconData _iconForType(MandalaResourceType type) {
+    switch (type) {
+      case MandalaResourceType.audio:
+        return Icons.audiotrack_outlined;
+      case MandalaResourceType.image:
+        return Icons.image_outlined;
+      case MandalaResourceType.pdf:
+        return Icons.picture_as_pdf_outlined;
+      case MandalaResourceType.text:
+        return Icons.notes_outlined;
+      case MandalaResourceType.other:
+        return Icons.attach_file_outlined;
     }
+  }
+
+  bool _isLinkResource(MandalaResourceModel item) {
+    if (item.type != MandalaResourceType.other) return false;
+    final raw = (item.inlineText ?? '').trim();
+    if (raw.isEmpty) return false;
+    final uri = Uri.tryParse(_normalizeUrl(raw));
+    return uri != null && uri.hasScheme && uri.host.isNotEmpty;
+  }
+
+  String _normalizeUrl(String value) {
+    final trimmed = value.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    return 'https://$trimmed';
+  }
+
+  Future<void> _openLinkResource(MandalaResourceModel item) async {
+    final raw = (item.inlineText ?? '').trim();
+    if (raw.isEmpty) return;
+    final uri = Uri.tryParse(_normalizeUrl(raw));
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override
   Widget build(BuildContext context) {
+    final repo = ref.read(repositoryProvider);
     final theme = Theme.of(context);
     final cs = Theme.of(context).colorScheme;
+    final folderById = <String, ResourceFolderModel>{
+      for (final folder in _folders) folder.id: folder,
+    };
+    final query = _searchQuery.trim().toLowerCase();
+    final allResources = repo.getMandalaResources();
+    final matchedResources = allResources
+        .where(
+          (item) => _matchesResourceSearch(
+            item: item,
+            query: query,
+            folderById: folderById,
+          ),
+        )
+        .toList(growable: false);
     final circleFolders =
         _folders
             .where((folder) => folder.parentId == _resourcesCirculosRootId)
@@ -307,6 +253,88 @@ class _ResourcesLibraryPageState extends ConsumerState<ResourcesLibraryPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
+                TextField(
+                  controller: _searchController,
+                  onChanged: (value) =>
+                      setState(() => _searchQuery = value.trim()),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar por título, tipo o carpeta',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Limpiar',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    FilterChip(
+                      label: const Text('Audio'),
+                      selected: _quickFilters.contains(
+                        MandalaResourceType.audio,
+                      ),
+                      onSelected: (_) =>
+                          _toggleQuickFilter(MandalaResourceType.audio),
+                    ),
+                    FilterChip(
+                      label: const Text('Imagen'),
+                      selected: _quickFilters.contains(
+                        MandalaResourceType.image,
+                      ),
+                      onSelected: (_) =>
+                          _toggleQuickFilter(MandalaResourceType.image),
+                    ),
+                    FilterChip(
+                      label: const Text('Texto'),
+                      selected: _quickFilters.contains(
+                        MandalaResourceType.text,
+                      ),
+                      onSelected: (_) =>
+                          _toggleQuickFilter(MandalaResourceType.text),
+                    ),
+                  ],
+                ),
+                if (query.isNotEmpty || _quickFilters.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Resultados (${matchedResources.length})',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  if (matchedResources.isEmpty)
+                    Text(
+                      'No se encontraron recursos con esos filtros.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    )
+                  else
+                    for (final item in matchedResources.take(60))
+                      Card(
+                        child: ListTile(
+                          leading: Icon(_iconForType(item.type)),
+                          title: Text(item.title),
+                          subtitle: Text(
+                            '${_labelForType(item.type)} · ${folderById[item.folderId]?.name ?? 'Sin carpeta'}',
+                          ),
+                          onTap: () => _openResourceFromSearch(item),
+                        ),
+                      ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                ],
+                if (query.isEmpty && _quickFilters.isEmpty)
+                  const SizedBox(height: 12),
                 if (circlesRootFolder != null)
                   _FolderTile(
                     key: ValueKey(circlesRootFolder.id),
@@ -347,7 +375,7 @@ class _ResourcesLibraryPageState extends ConsumerState<ResourcesLibraryPage> {
                   margin: const EdgeInsets.only(bottom: 10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(color: cs.outlineVariant),
+                    side: BorderSide.none,
                   ),
                   child: ListTile(
                     onTap: () async {
@@ -538,22 +566,29 @@ class _ResourcesLibraryPageState extends ConsumerState<ResourcesLibraryPage> {
       }
     }
     final folderIds = <String>{folder.id, ...descendantIds};
-    final items = repo
+    final filePaths = repo
         .getMandalaResources()
         .where((resource) => folderIds.contains(resource.folderId))
+        .map((resource) => (resource.filePath ?? '').trim())
+        .where((path) => path.isNotEmpty)
         .toList(growable: false);
 
-    for (final item in items) {
-      final path = item.filePath;
-      if (path == null || path.isEmpty) continue;
-      final file = File(path);
-      if (await file.exists()) {
-        await file.delete();
+    await repo.deleteResourceFolder(folder.id);
+    await _deleteLocalFilesBestEffort(filePaths);
+    await _reload();
+  }
+
+  Future<void> _deleteLocalFilesBestEffort(List<String> paths) async {
+    for (final path in paths) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (_) {
+        // No bloquea la eliminación lógica del recurso.
       }
     }
-
-    await repo.deleteResourceFolder(folder.id);
-    await _reload();
   }
 
   Future<void> _openFolderOrderDialog() async {
@@ -620,893 +655,5 @@ class _ResourcesLibraryPageState extends ConsumerState<ResourcesLibraryPage> {
       reordered.map((folder) => folder.id).toList(growable: false),
     );
     await _reload();
-  }
-}
-
-class _FolderTile extends StatelessWidget {
-  const _FolderTile({
-    required this.folder,
-    required this.resourceCount,
-    required this.onTap,
-    this.reorderIndex,
-    this.onEdit,
-    this.onDelete,
-    super.key,
-  });
-
-  final ResourceFolderModel folder;
-  final int resourceCount;
-  final VoidCallback onTap;
-  final int? reorderIndex;
-  final VoidCallback? onEdit;
-  final VoidCallback? onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = Theme.of(context).colorScheme;
-    final circleLabel = _circleLabel(folder.circle);
-
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outlineVariant),
-      ),
-      child: ListTile(
-        onTap: onTap,
-        leading: Icon(Icons.folder_outlined, color: cs.primary),
-        title: Text(
-          folder.name,
-          style: theme.textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-            fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16) - 1.2,
-          ),
-        ),
-        subtitle: Text(
-          '${folder.name} · $circleLabel · $resourceCount recursos',
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontSize: (theme.textTheme.bodySmall?.fontSize ?? 14) - 0.6,
-          ),
-        ),
-        trailing: (onEdit == null && onDelete == null)
-            ? const Icon(Icons.chevron_right)
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (reorderIndex != null)
-                    ReorderableDragStartListener(
-                      index: reorderIndex!,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 4),
-                        child: Icon(Icons.drag_handle),
-                      ),
-                    ),
-                  if (onEdit != null)
-                    IconButton(
-                      tooltip: 'Editar carpeta',
-                      onPressed: onEdit,
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                  if (onDelete != null)
-                    IconButton(
-                      tooltip: 'Eliminar carpeta',
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                ],
-              ),
-      ),
-    );
-  }
-}
-
-class _CircleFoldersPage extends ConsumerStatefulWidget {
-  const _CircleFoldersPage({
-    required this.folders,
-    required this.countsByFolder,
-  });
-
-  final List<ResourceFolderModel> folders;
-  final Map<String, int> countsByFolder;
-
-  @override
-  ConsumerState<_CircleFoldersPage> createState() => _CircleFoldersPageState();
-}
-
-class _CircleFoldersPageState extends ConsumerState<_CircleFoldersPage> {
-  late Map<String, int> _countsByFolder;
-
-  @override
-  void initState() {
-    super.initState();
-    _countsByFolder = Map<String, int>.from(widget.countsByFolder);
-  }
-
-  void _reloadCounts() {
-    final repo = ref.read(repositoryProvider);
-    final items = repo.getMandalaResources();
-    final counts = <String, int>{};
-    for (final item in items) {
-      final key = item.folderId.trim();
-      if (key.isEmpty) continue;
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    if (!mounted) return;
-    setState(() {
-      _countsByFolder = counts;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(_resourcesCirculosRootName),
-        actions: [
-          IconButton(
-            tooltip: 'Ordenar círculos',
-            onPressed: _openCircleOrderDialog,
-            icon: const Icon(Icons.swap_vert_outlined),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-        children: [
-          for (final folder in widget.folders)
-            _FolderTile(
-              folder: folder.copyWith(
-                name:
-                    'Círculo ${_romanByCircle[folder.circle] ?? folder.circle}',
-              ),
-              resourceCount: _countsByFolder[folder.id] ?? 0,
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ResourceFolderPage(folder: folder),
-                  ),
-                );
-                _reloadCounts();
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openCircleOrderDialog() async {
-    if (widget.folders.length < 2) return;
-    final ordered = await _showReorderDialog(
-      context: context,
-      title: 'Ordenar círculos',
-      items: widget.folders,
-      idOf: (folder) => folder.id,
-      labelOf: (folder) =>
-          'Círculo ${_romanByCircle[folder.circle] ?? folder.circle}',
-    );
-    if (ordered == null) return;
-    final repo = ref.read(repositoryProvider);
-    final current = repo
-        .getResourceFolders()
-        .map((folder) => folder.id)
-        .toList();
-    final subset = ordered.toSet();
-    var pointer = 0;
-    final merged = <String>[];
-    for (final id in current) {
-      if (subset.contains(id)) {
-        merged.add(ordered[pointer]);
-        pointer += 1;
-      } else {
-        merged.add(id);
-      }
-    }
-    await repo.saveResourceFoldersOrderIds(merged);
-    _reloadCounts();
-  }
-}
-
-Future<List<String>?> _showReorderDialog<T>({
-  required BuildContext context,
-  required String title,
-  required List<T> items,
-  required String Function(T item) idOf,
-  required String Function(T item) labelOf,
-}) async {
-  final working = List<T>.from(items);
-  return showModalBottomSheet<List<String>>(
-    context: context,
-    useSafeArea: true,
-    isScrollControlled: true,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setModalState) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(
-                    ctx,
-                    working.map(idOf).toList(growable: false),
-                  ),
-                  child: const Text('Guardar'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Flexible(
-              child: ReorderableListView.builder(
-                shrinkWrap: true,
-                buildDefaultDragHandles: false,
-                itemCount: working.length,
-                onReorder: (oldIndex, newIndex) {
-                  setModalState(() {
-                    if (newIndex > oldIndex) newIndex -= 1;
-                    final moved = working.removeAt(oldIndex);
-                    working.insert(newIndex, moved);
-                  });
-                },
-                itemBuilder: (ctx, index) {
-                  final item = working[index];
-                  return ListTile(
-                    key: ValueKey(idOf(item)),
-                    title: Text(labelOf(item)),
-                    leading: const Icon(Icons.drag_handle),
-                    trailing: ReorderableDragStartListener(
-                      index: index,
-                      child: const Icon(Icons.unfold_more),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class ResourceFolderPage extends ConsumerStatefulWidget {
-  const ResourceFolderPage({required this.folder, super.key});
-
-  final ResourceFolderModel folder;
-
-  @override
-  ConsumerState<ResourceFolderPage> createState() => _ResourceFolderPageState();
-}
-
-class _ResourceFolderPageState extends ConsumerState<ResourceFolderPage> {
-  List<MandalaResourceModel> _items = <MandalaResourceModel>[];
-  List<ResourceFolderModel> _childFolders = <ResourceFolderModel>[];
-  Map<String, int> _countsByFolder = <String, int>{};
-
-  @override
-  void initState() {
-    super.initState();
-    _reload();
-  }
-
-  void _reload() {
-    final repo = ref.read(repositoryProvider);
-    final allItems = repo.getMandalaResources();
-    final counts = <String, int>{};
-    for (final item in allItems) {
-      final key = item.folderId.trim();
-      if (key.isEmpty) continue;
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-
-    setState(() {
-      _items = repo.getMandalaResourcesForFolderOrdered(widget.folder.id);
-      _childFolders = repo.getChildResourceFolders(widget.folder.id);
-      _countsByFolder = counts;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              widget.folder.name,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontSize: (theme.textTheme.titleMedium?.fontSize ?? 16) - 0.6,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            Text(
-              '${widget.folder.name}'
-              ' · ${_circleLabel(widget.folder.circle)}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
-                fontSize: (theme.textTheme.bodySmall?.fontSize ?? 14) - 0.8,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Ordenar recursos',
-            onPressed: _openItemsOrderDialog,
-            icon: const Icon(Icons.swap_vert_outlined),
-          ),
-        ],
-      ),
-      body: (_items.isEmpty && _childFolders.isEmpty)
-          ? Center(
-              child: Text(
-                'Esta carpeta está vacía.\nToca + para agregar recursos.',
-                textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-              children: [
-                for (final folder in _childFolders)
-                  _FolderTile(
-                    key: ValueKey(folder.id),
-                    folder: folder,
-                    resourceCount: _countsByFolder[folder.id] ?? 0,
-                    onTap: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ResourceFolderPage(folder: folder),
-                        ),
-                      );
-                      _reload();
-                    },
-                    onEdit: () => _openSubfolderDialog(existing: folder),
-                    onDelete: () => _deleteSubfolder(folder),
-                  ),
-                if (_items.isNotEmpty)
-                  ReorderableListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    buildDefaultDragHandles: false,
-                    itemCount: _items.length,
-                    onReorder: _onReorderItems,
-                    itemBuilder: (context, index) {
-                      final item = _items[index];
-                      return Card(
-                        key: ValueKey(item.id),
-                        elevation: 0,
-                        margin: const EdgeInsets.only(bottom: 10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(color: cs.outlineVariant),
-                        ),
-                        child: ListTile(
-                          onTap: () => _handleItemTap(item),
-                          leading: Icon(
-                            _iconForResource(item),
-                            color: cs.primary,
-                          ),
-                          title: Text(item.title),
-                          subtitle: Text(_labelForResource(item)),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ReorderableDragStartListener(
-                                index: index,
-                                child: const Icon(Icons.drag_handle),
-                              ),
-                              IconButton(
-                                tooltip: 'Eliminar',
-                                onPressed: () => _deleteItem(item),
-                                icon: const Icon(Icons.delete_outline),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddMenu,
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  Future<void> _openSubfolderDialog({ResourceFolderModel? existing}) async {
-    final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final save = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? 'Nueva carpeta' : 'Editar carpeta'),
-        content: TextField(
-          controller: nameCtrl,
-          decoration: const InputDecoration(labelText: 'Nombre'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-    if (save != true) return;
-    final name = nameCtrl.text.trim();
-    if (name.isEmpty) return;
-
-    final repo = ref.read(repositoryProvider);
-    if (existing == null) {
-      await repo.createResourceFolder(
-        name: name,
-        circle: widget.folder.circle,
-        parentId: widget.folder.id,
-      );
-    } else {
-      await repo.saveResourceFolder(existing.copyWith(name: name));
-    }
-    _reload();
-  }
-
-  Future<void> _deleteSubfolder(ResourceFolderModel folder) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar carpeta'),
-        content: const Text(
-          'Se eliminará esta carpeta, sus subcarpetas y todos sus recursos.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final repo = ref.read(repositoryProvider);
-    final allFolders = repo.getResourceFolders();
-    final descendantIds = <String>{};
-    final queue = <String>[folder.id];
-    while (queue.isNotEmpty) {
-      final current = queue.removeLast();
-      for (final candidate in allFolders) {
-        if (candidate.parentId != current) continue;
-        if (descendantIds.add(candidate.id)) {
-          queue.add(candidate.id);
-        }
-      }
-    }
-    final folderIds = <String>{folder.id, ...descendantIds};
-    final resources = repo
-        .getMandalaResources()
-        .where((resource) => folderIds.contains(resource.folderId))
-        .toList(growable: false);
-    for (final item in resources) {
-      final path = item.filePath;
-      if (path == null || path.isEmpty) continue;
-      final file = File(path);
-      if (await file.exists()) {
-        await file.delete();
-      }
-    }
-    await repo.deleteResourceFolder(folder.id);
-    _reload();
-  }
-
-  Future<void> _onReorderItems(int oldIndex, int newIndex) async {
-    setState(() {
-      if (newIndex > oldIndex) newIndex -= 1;
-      final moved = _items.removeAt(oldIndex);
-      _items.insert(newIndex, moved);
-    });
-    final repo = ref.read(repositoryProvider);
-    await repo.saveResourceItemsOrderForFolder(
-      widget.folder.id,
-      _items.map((item) => item.id).toList(growable: false),
-    );
-    _reload();
-  }
-
-  IconData _iconForType(MandalaResourceType type) {
-    switch (type) {
-      case MandalaResourceType.audio:
-        return Icons.audiotrack_outlined;
-      case MandalaResourceType.image:
-        return Icons.image_outlined;
-      case MandalaResourceType.pdf:
-        return Icons.picture_as_pdf_outlined;
-      case MandalaResourceType.text:
-        return Icons.notes_outlined;
-      case MandalaResourceType.other:
-        return Icons.attach_file_outlined;
-    }
-  }
-
-  IconData _iconForResource(MandalaResourceModel item) {
-    if (_isLinkResource(item)) return Icons.link_outlined;
-    return _iconForType(item.type);
-  }
-
-  String _labelForType(MandalaResourceType type) {
-    switch (type) {
-      case MandalaResourceType.audio:
-        return 'Audio';
-      case MandalaResourceType.image:
-        return 'Imagen';
-      case MandalaResourceType.pdf:
-        return 'PDF';
-      case MandalaResourceType.text:
-        return 'Texto';
-      case MandalaResourceType.other:
-        return 'Archivo';
-    }
-  }
-
-  String _labelForResource(MandalaResourceModel item) {
-    if (_isLinkResource(item)) return 'Link';
-    return _labelForType(item.type);
-  }
-
-  bool _isLinkResource(MandalaResourceModel item) {
-    if (item.type != MandalaResourceType.other) return false;
-    final raw = (item.inlineText ?? '').trim();
-    if (raw.isEmpty) return false;
-    final uri = Uri.tryParse(_normalizeUrl(raw));
-    return uri != null && uri.hasScheme && uri.host.isNotEmpty;
-  }
-
-  String _normalizeUrl(String value) {
-    final trimmed = value.trim();
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return trimmed;
-    }
-    return 'https://$trimmed';
-  }
-
-  Future<void> _openLinkResource(MandalaResourceModel item) async {
-    final raw = (item.inlineText ?? '').trim();
-    if (raw.isEmpty) return;
-    final uri = Uri.tryParse(_normalizeUrl(raw));
-    if (uri == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Link inválido')));
-      return;
-    }
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (opened || !mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('No se pudo abrir el link')));
-  }
-
-  Future<void> _openItemsOrderDialog() async {
-    if (_items.length < 2) return;
-    final ordered = await _showReorderDialog(
-      context: context,
-      title: 'Ordenar recursos',
-      items: _items,
-      idOf: (item) => item.id,
-      labelOf: (item) => item.title,
-    );
-    if (ordered == null) return;
-    final repo = ref.read(repositoryProvider);
-    await repo.saveResourceItemsOrderForFolder(widget.folder.id, ordered);
-    _reload();
-  }
-
-  void _openResource(MandalaResourceModel item) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ResourceViewerPage(resource: item)),
-    );
-  }
-
-  Future<void> _handleItemTap(MandalaResourceModel item) async {
-    if (_isLinkResource(item)) {
-      await _openLinkResource(item);
-      return;
-    }
-    _openResource(item);
-  }
-
-  Future<void> _showAddMenu() async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.create_new_folder_outlined),
-              title: const Text('Agregar carpeta'),
-              onTap: () => Navigator.pop(ctx, 'folder'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_note_outlined),
-              title: const Text('Agregar texto'),
-              onTap: () => Navigator.pop(ctx, 'text'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.upload_file_outlined),
-              title: const Text('Agregar archivo'),
-              onTap: () => Navigator.pop(ctx, 'file'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.link_outlined),
-              title: const Text('Agregar link'),
-              onTap: () => Navigator.pop(ctx, 'link'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (!mounted || choice == null) return;
-    if (choice == 'folder') {
-      await _openSubfolderDialog();
-    } else if (choice == 'text') {
-      await _addTextResource();
-    } else if (choice == 'link') {
-      await _addLinkResource();
-    } else {
-      await _addFileResource();
-    }
-  }
-
-  Future<void> _addLinkResource() async {
-    final titleCtrl = TextEditingController();
-    final urlCtrl = TextEditingController();
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nuevo link'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleCtrl,
-              decoration: const InputDecoration(labelText: 'Título'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: urlCtrl,
-              decoration: const InputDecoration(
-                labelText: 'URL',
-                hintText: 'https://...',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-    if (result != true) return;
-
-    final rawUrl = urlCtrl.text.trim();
-    if (rawUrl.isEmpty) return;
-    final normalized = _normalizeUrl(rawUrl);
-    final uri = Uri.tryParse(normalized);
-    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Link inválido')));
-      return;
-    }
-
-    final title = titleCtrl.text.trim();
-    final repo = ref.read(repositoryProvider);
-    await repo.saveMandalaResource(
-      MandalaResourceModel.create(
-        cycleId: widget.folder.id,
-        folderId: widget.folder.id,
-        title: title.isEmpty ? normalized : title,
-        type: MandalaResourceType.other,
-        inlineText: normalized,
-      ),
-    );
-    _reload();
-  }
-
-  Future<void> _addTextResource() async {
-    final titleCtrl = TextEditingController();
-    final textCtrl = TextEditingController();
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nuevo texto'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(labelText: 'Título'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: textCtrl,
-                minLines: 4,
-                maxLines: 8,
-                decoration: const InputDecoration(labelText: 'Contenido'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-    if (result != true) return;
-
-    final title = titleCtrl.text.trim();
-    final content = textCtrl.text.trim();
-    if (title.isEmpty || content.isEmpty) return;
-
-    final repo = ref.read(repositoryProvider);
-    await repo.saveMandalaResource(
-      MandalaResourceModel.create(
-        cycleId: widget.folder.id,
-        folderId: widget.folder.id,
-        title: title,
-        type: MandalaResourceType.text,
-        inlineText: content,
-      ),
-    );
-    _reload();
-  }
-
-  Future<void> _addFileResource() async {
-    final picked = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
-      type: FileType.custom,
-      allowedExtensions: [
-        'mp3',
-        'wav',
-        'm4a',
-        'aac',
-        'ogg',
-        'flac',
-        'jpg',
-        'jpeg',
-        'png',
-        'webp',
-        'gif',
-        'pdf',
-        'txt',
-      ],
-    );
-    if (picked == null || picked.files.isEmpty) return;
-
-    final sourcePath = picked.files.first.path;
-    if (sourcePath == null || sourcePath.isEmpty) return;
-
-    final source = File(sourcePath);
-    if (!await source.exists()) return;
-
-    final docs = await getApplicationDocumentsDirectory();
-    final resourcesDir = Directory(
-      p.join(docs.path, 'resources', 'folders', widget.folder.id),
-    );
-    if (!await resourcesDir.exists()) {
-      await resourcesDir.create(recursive: true);
-    }
-
-    final ext = p.extension(sourcePath).toLowerCase();
-    final filename =
-        '${DateTime.now().millisecondsSinceEpoch}_${p.basename(sourcePath)}';
-    final destPath = p.join(resourcesDir.path, filename);
-    await source.copy(destPath);
-
-    final type = _detectType(ext);
-    final title = p.basenameWithoutExtension(sourcePath).trim();
-
-    final repo = ref.read(repositoryProvider);
-    await repo.saveMandalaResource(
-      MandalaResourceModel.create(
-        cycleId: widget.folder.id,
-        folderId: widget.folder.id,
-        title: title.isEmpty ? 'Recurso' : title,
-        type: type,
-        filePath: destPath,
-      ),
-    );
-    _reload();
-  }
-
-  MandalaResourceType _detectType(String ext) {
-    if (['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac'].contains(ext)) {
-      return MandalaResourceType.audio;
-    }
-    if (['.jpg', '.jpeg', '.png', '.webp', '.gif'].contains(ext)) {
-      return MandalaResourceType.image;
-    }
-    if (ext == '.pdf') return MandalaResourceType.pdf;
-    if (ext == '.txt') return MandalaResourceType.text;
-    return MandalaResourceType.other;
-  }
-
-  Future<void> _deleteItem(MandalaResourceModel item) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar recurso'),
-        content: const Text('Esta acción no se puede deshacer.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    final repo = ref.read(repositoryProvider);
-    await repo.deleteMandalaResource(item.id);
-
-    final path = item.filePath;
-    if (path != null && path.isNotEmpty) {
-      final file = File(path);
-      if (await file.exists()) {
-        await file.delete();
-      }
-    }
-
-    _reload();
   }
 }

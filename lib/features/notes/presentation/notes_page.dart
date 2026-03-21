@@ -314,7 +314,7 @@ class _NoteCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: cs.outlineVariant),
+        side: BorderSide.none,
       ),
       child: InkWell(
         onTap: onEdit,

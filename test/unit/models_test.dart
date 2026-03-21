@@ -35,6 +35,7 @@ void main() {
       expect(t.id, isNotEmpty);
       expect(t.isActive, isTrue);
       expect(t.description, isNull);
+      expect(t.linkedResourceIds, isEmpty);
     });
 
     test('toMap y fromMap son inversos', () {
@@ -44,6 +45,7 @@ void main() {
         title: 'Yoga',
         description: 'Hatha yoga',
         isActive: true,
+        linkedResourceIds: const ['r1', 'r2'],
       );
       final map = t.toMap();
       final restored = TaskModel.fromMap(map);
@@ -53,6 +55,7 @@ void main() {
       expect(restored.title, t.title);
       expect(restored.description, t.description);
       expect(restored.isActive, t.isActive);
+      expect(restored.linkedResourceIds, t.linkedResourceIds);
     });
 
     test('fromMap con description null', () {
@@ -66,14 +69,20 @@ void main() {
       final t = TaskModel.fromMap(map);
       expect(t.description, isNull);
       expect(t.isActive, isFalse);
+      expect(t.linkedResourceIds, isEmpty);
     });
 
     test('copyWith reemplaza campos individuales', () {
       final t = TaskModel.create(cycleId: 'c', title: 'Original');
-      final updated = t.copyWith(title: 'Nuevo', isActive: false);
+      final updated = t.copyWith(
+        title: 'Nuevo',
+        isActive: false,
+        linkedResourceIds: const ['res-1'],
+      );
       expect(updated.title, 'Nuevo');
       expect(updated.isActive, isFalse);
       expect(updated.cycleId, t.cycleId);
+      expect(updated.linkedResourceIds, const ['res-1']);
     });
   });
 
@@ -135,6 +144,7 @@ void main() {
       expect(c.startDay, 1);
       expect(c.streakCurrent, 0);
       expect(c.streakMax, 0);
+      expect(c.linkedResourceFolderIds, isEmpty);
     });
 
     test('create falla con duracion invalida', () {
@@ -193,6 +203,8 @@ void main() {
         streakCurrent: 5,
         streakMax: 8,
         isActive: true,
+        linkedResourceFolderIds: const ['folder-a', 'folder-b'],
+        plannedStartDateKey: '2026-03-15',
       );
       final restored = CycleModel.fromMap(c.toMap());
       expect(restored.id, c.id);
@@ -202,6 +214,8 @@ void main() {
       expect(restored.streakCurrent, c.streakCurrent);
       expect(restored.streakMax, c.streakMax);
       expect(restored.isActive, c.isActive);
+      expect(restored.linkedResourceFolderIds, c.linkedResourceFolderIds);
+      expect(restored.plannedStartDateKey, c.plannedStartDateKey);
     });
 
     test('copyWith preserva campos no modificados', () {
@@ -216,6 +230,23 @@ void main() {
       expect(updated.sankalpa, c.sankalpa);
       expect(updated.isActive, isTrue);
       expect(updated.currentDay, 3);
+    });
+
+    test('fromMap sin linkedResourceFolderIds usa default seguro', () {
+      final restored = CycleModel.fromMap({
+        'id': 'legacy',
+        'name': 'Legacy',
+        'duration': 21,
+        'customDuration': false,
+        'startDay': 1,
+        'currentDay': 1,
+        'sankalpa': 'S',
+        'streakCurrent': 0,
+        'streakMax': 0,
+        'isActive': false,
+      });
+      expect(restored.linkedResourceFolderIds, isEmpty);
+      expect(restored.plannedStartDateKey, isNull);
     });
   });
 

@@ -45,13 +45,43 @@ class DayLogModel {
   }
 
   factory DayLogModel.fromMap(Map<dynamic, dynamic> map) {
+    final rawCompleted = map['completedTaskIds'];
+    final completedTaskIds = rawCompleted is List
+        ? rawCompleted
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList(growable: false)
+        : const <String>[];
     return DayLogModel(
-      id: map['id'] as String,
-      cycleId: map['cycleId'] as String,
-      date: map['date'] as String,
-      completedTaskIds: List<String>.from(map['completedTaskIds'] as List),
-      closed: map['closed'] as bool,
-      wasComplete: map['wasComplete'] as bool,
+      id: _readRequiredString(map, 'id'),
+      cycleId: _readRequiredString(map, 'cycleId'),
+      date: _readRequiredString(map, 'date'),
+      completedTaskIds: completedTaskIds,
+      closed: _readBool(map['closed'], fallback: false),
+      wasComplete: _readBool(map['wasComplete'], fallback: false),
     );
+  }
+
+  static String _readRequiredString(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) {
+      throw FormatException('DayLogModel.$key requerido');
+    }
+    final text = value.toString().trim();
+    if (text.isEmpty) {
+      throw FormatException('DayLogModel.$key vacío');
+    }
+    return text;
+  }
+
+  static bool _readBool(dynamic value, {required bool fallback}) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1') return true;
+      if (normalized == 'false' || normalized == '0') return false;
+    }
+    return fallback;
   }
 }

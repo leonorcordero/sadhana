@@ -70,6 +70,11 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     final cycles = state.cycles;
     final repo = ref.read(repositoryProvider);
     final completionMap = _buildCompletionMap(repo, cycles);
+    final customDateKeys = _customEvents.map((event) => event.dateKey).toSet();
+    final externalVisibleDateKeys = _externalEvents
+        .where((event) => repo.isExternalEventVisibleModel(event))
+        .map((event) => event.dateKey)
+        .toSet();
     final customEventsToday = _customEvents
         .where((e) => e.dateKey == DateUtilsX.dateKey(state.selectedDate))
         .toList();
@@ -149,9 +154,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
+              side: BorderSide.none,
             ),
             child: Padding(
               padding: const EdgeInsets.all(8),
@@ -168,15 +171,11 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                   markerBuilder: (context, day, events) {
                     final cs = Theme.of(context).colorScheme;
                     final key = DateTime(day.year, day.month, day.day);
+                    final dayKey = DateUtilsX.dateKey(key);
                     final completed = completionMap[key];
-                    final hasCustomEvent = _customEvents.any(
-                      (e) => e.dateKey == DateUtilsX.dateKey(key),
-                    );
-                    final hasExternalVisibleEvent = _externalEvents.any(
-                      (e) =>
-                          e.dateKey == DateUtilsX.dateKey(key) &&
-                          repo.isExternalEventVisibleModel(e),
-                    );
+                    final hasCustomEvent = customDateKeys.contains(dayKey);
+                    final hasExternalVisibleEvent = externalVisibleDateKeys
+                        .contains(dayKey);
                     if (completed == null &&
                         !hasCustomEvent &&
                         !hasExternalVisibleEvent) {
@@ -229,9 +228,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
+              side: BorderSide.none,
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -293,9 +290,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
+              side: BorderSide.none,
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
